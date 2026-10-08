@@ -3,6 +3,7 @@
 
 import calendar
 import json
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,8 +12,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
-HOST = "127.0.0.1"
-PORT = 8787
+HOST = os.environ.get("HOST", "127.0.0.1")
+PORT = int(os.environ.get("PORT", "8787"))
 DAY_MS = 86_400_000
 SCALP_SECONDS = 24 * 60 * 60
 SCALP_CACHE = {"at": 0, "payload": None}
