@@ -793,7 +793,7 @@
   function loadSymbol(symbol) {
     symbolSelect.value = symbol;
     symbolSelect.disabled = true;
-    fetch("/api/klines?symbol=" + encodeURIComponent(symbol))
+    fetch("api/klines?symbol=" + encodeURIComponent(symbol))
       .then(function (response) { return response.json(); })
       .then(function (data) {
         if (data.error) throw new Error(data.error);
@@ -897,7 +897,7 @@
     status.className = "status";
     status.textContent = "비트코인 1초봉을 불러오는 중입니다.";
     board.hidden = true;
-    fetch("/api/scalp")
+    fetch("api/scalp")
       .then(function (response) { return response.json(); })
       .then(function (data) {
         if (data.error) throw new Error(data.error);
