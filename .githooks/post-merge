@@ -1,0 +1,12 @@
+#!/bin/sh
+# git pull 이 파일을 실제로 합쳤을 때만 실행된다.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+if pm2 describe coin-trading >/dev/null 2>&1; then
+  pm2 restart ecosystem.config.js --update-env
+else
+  pm2 start ecosystem.config.js
+fi
+pm2 save
+pm2 list
