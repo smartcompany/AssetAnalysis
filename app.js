@@ -691,17 +691,39 @@
     fill.style.left = left + "px";
     fill.style.width = Math.max(0, right - left) + "px";
     document.querySelectorAll("#windows button").forEach(function (button) {
+      const years = Number(button.dataset.years || 0);
+      button.hidden = button.dataset.mode !== state.mode || (years > 0 && !assetCoversYears(years));
       if (button.hidden) {
         button.setAttribute("aria-pressed", "false");
         return;
       }
       const amount = button.dataset.seconds || button.dataset.days;
-      const span = amount === "all" ? state.bars.length : Number(amount);
-      const presetStart = amount === "all" ? 0 : Math.max(0, end - (span - 1));
-      const matches = start === presetStart && (amount === "all" ? end === last : end - start + 1 === Math.min(span, last + 1));
+      let matches = false;
+      if (years > 0) {
+        const presetStart = indexOnOrAfter(yearsBefore(state.bars[end].time, years));
+        matches = start === presetStart && end === state.endIndex;
+      } else {
+        const span = amount === "all" ? state.bars.length : Number(amount);
+        const presetStart = amount === "all" ? 0 : Math.max(0, end - (span - 1));
+        matches = start === presetStart && (amount === "all" ? end === last : end - start + 1 === Math.min(span, last + 1));
+      }
       button.setAttribute("aria-pressed", matches ? "true" : "false");
     });
     render();
+  }
+
+  function assetCoversYears(years) {
+    if (state.bars.length < 2) return false;
+    const span = state.bars[state.bars.length - 1].ts - state.bars[0].ts;
+    return span >= years * 365.25 * 86400000;
+  }
+
+  function yearsBefore(time, years) {
+    const date = new Date(time.slice(0, 10) + "T00:00:00Z");
+    date.setUTCFullYear(date.getUTCFullYear() - years);
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+    return date.getUTCFullYear() + "-" + month + "-" + day + time.slice(10);
   }
 
   function indexOnOrAfter(iso) {
@@ -752,8 +774,14 @@
   });
   document.getElementById("windows").addEventListener("click", function (event) {
     const button = event.target.closest("button");
-    if (!button) return;
+    if (!button || button.hidden) return;
     const last = state.bars.length - 1;
+    if (button.dataset.years) {
+      const end = state.endIndex;
+      const start = indexOnOrAfter(yearsBefore(state.bars[end].time, Number(button.dataset.years)));
+      setRange(Math.min(start, end), end, "both");
+      return;
+    }
     if (button.dataset.seconds) {
       if (button.dataset.seconds === "all") {
         setRange(0, last, "both");
