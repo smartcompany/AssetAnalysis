@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>현물 이평선 매매</title>
+  <style>
+    :root {
+      --bg: #101214;
+      --panel: #181b1f;
+      --line: #2a2f36;
+      --text: #f3f4f6;
+      --muted: #9aa1a9;
+      --up: #2fce85;
+      --down: #ef5b6a;
+      --ma: #e6b34d;
+      --hold: #8b97a8;
+      --close: #c8cdd4;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 "Apple SD Gothic Neo", "Pretendard", sans-serif;
+    }
+    button, input, select { font: inherit; color: inherit; }
+    .app { max-width: 1180px; margin: 0 auto; padding: 22px 20px 48px; }
+    header { margin-bottom: 18px; }
+    h1 { margin: 0 0 4px; font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+    .sub { margin: 0; color: var(--muted); }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 22px;
+      align-items: end;
+      margin: 16px 0;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field span, .panel h2 { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tabs button {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 14px;
+      cursor: pointer;
+    }
+    .tabs button[aria-pressed="true"] { background: var(--text); color: #141618; border-color: var(--text); }
+    .tabs button:disabled { opacity: 0.35; cursor: default; }
+    .choices { display: flex; gap: 6px; flex-wrap: wrap; }
+    .choices button, .period-input, .window-row > button {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .choices button:disabled, .period-input:disabled { opacity: 0.35; cursor: default; }
+    .choices button[aria-pressed="true"] {
+      background: var(--text);
+      color: #141618;
+      border-color: var(--text);
+    }
+    .window-field { flex: 1 1 100%; gap: 8px; }
+    .dual-row { display: flex; align-items: center; gap: 10px; }
+    .dual {
+      position: relative;
+      flex: 1;
+      min-width: 160px;
+      height: 28px;
+      display: grid;
+    }
+    .dual-track, .dual-fill {
+      position: absolute;
+      top: 12px;
+      height: 4px;
+      border-radius: 999px;
+      pointer-events: none;
+    }
+    .dual-track { left: 8px; right: 8px; background: var(--line); }
+    .dual-fill { background: var(--ma); }
+    .dual input[type="range"] {
+      grid-area: 1 / 1;
+      appearance: none;
+      background: transparent;
+      pointer-events: none;
+      margin: 0;
+      height: 28px;
+      width: 100%;
+    }
+    .dual input[type="range"]::-webkit-slider-runnable-track {
+      height: 4px;
+      background: transparent;
+    }
+    .dual input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      pointer-events: auto;
+      width: 16px;
+      height: 16px;
+      margin-top: -6px;
+      border-radius: 50%;
+      background: var(--ma);
+      border: 2px solid var(--bg);
+      cursor: grab;
+    }
+    .date-input {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+    .period-input { width: 76px; border-radius: 8px; background: var(--panel); }
+    .symbol-select {
+      min-width: 196px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 16px;
+      align-items: start;
+    }
+    .charts { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .panel, .chart-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .chart-card { padding: 12px 12px 8px; }
+    .chart-head, .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .chart-tools { display: flex; gap: 12px; align-items: center; }
+    .zoom { display: flex; gap: 4px; }
+    .zoom button {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+    }
+    .chart-head strong { font-size: 13px; }
+    .legend { display: flex; gap: 12px; color: var(--muted); font-size: 12px; }
+    .legend i {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 4px;
+      vertical-align: -1px;
+    }
+    canvas { width: 100%; display: block; cursor: crosshair; }
+    .panel { padding: 14px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; margin: 12px 0; }
+    .stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+    .stat em { font-style: normal; color: var(--muted); font-size: 12px; }
+    .start-amount { margin: 10px 0 0; font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+    .start-amount span { display: block; margin-bottom: 2px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0; }
+    .up { color: var(--up); }
+    .down { color: var(--down); }
+    .rule { margin: 0; padding-left: 16px; color: var(--muted); }
+    .rule li { margin: 4px 0; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; }
+    th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 4px; }
+    td { padding: 6px 4px; border-top: 1px solid var(--line); }
+    .trades { margin-top: 16px; max-height: 280px; overflow: auto; }
+    .status { color: var(--muted); padding: 28px 8px; }
+    .error { color: var(--down); }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <nav class="tabs" id="tabs">
+      <button type="button" data-tab="daily" aria-pressed="true">일봉</button>
+      <button type="button" data-tab="scalp" aria-pressed="false">단타</button>
+    </nav>
+    <header>
+      <h1 id="page-title">현물 이평선 매매</h1>
+      <p class="sub" id="range-note">바이비트 현물 일봉을 상장일부터 불러옵니다.</p>
+    </header>
+    <section class="controls">
+      <div class="field" data-page="daily">
+        <span>종목</span>
+        <select id="symbols" class="symbol-select" aria-label="종목">
+          <optgroup label="코인">
+            <option value="BTCUSDT">비트코인</option>
+            <option value="ETHUSDT">이더리움</option>
+            <option value="SOLUSDT">솔라나</option>
+            <option value="XRPUSDT">리플</option>
+            <option value="DOGEUSDT">도지코인</option>
+            <option value="BNBUSDT">바이낸스코인</option>
+          </optgroup>
+          <optgroup label="미국 주식">
+            <option value="AAPL">애플</option>
+            <option value="MSFT">마이크로소프트</option>
+            <option value="NVDA">엔비디아</option>
+            <option value="AMZN">아마존</option>
+            <option value="GOOGL">알파벳</option>
+            <option value="META">메타</option>
+            <option value="TSLA">테슬라</option>
+          </optgroup>
+          <optgroup label="한국 주식">
+            <option value="005930.KS">삼성전자</option>
+            <option value="000660.KS">SK하이닉스</option>
+            <option value="373220.KS">LG에너지솔루션</option>
+            <option value="207940.KS">삼성바이오로직스</option>
+            <option value="005380.KS">현대차</option>
+            <option value="000270.KS">기아</option>
+            <option value="035420.KS">NAVER</option>
+            <option value="035720.KS">카카오</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field" data-page="daily">
+        <span>이평 종류</span>
+        <div class="choices" id="kinds">
+          <button type="button" data-kind="sma" aria-pressed="true">단순</button>
+          <button type="button" data-kind="ema" aria-pressed="false">지수</button>
+          <button type="button" data-kind="hold" aria-pressed="false">존버</button>
+        </div>
+      </div>
+      <div class="field" data-page="daily">
+        <span>이평</span>
+        <div class="choices" id="periods">
+          <button type="button" data-period="5">5일</button>
+          <button type="button" data-period="10">10일</button>
+          <button type="button" data-period="20" aria-pressed="true">20일</button>
+          <button type="button" data-period="50">50일</button>
+          <button type="button" data-period="60">60일</button>
+          <button type="button" data-period="120">120일</button>
+        </div>
+      </div>
+      <label class="field" data-page="daily">
+        <span>직접 입력</span>
+        <input class="period-input" id="custom-period" type="number" min="2" max="200" step="1" value="20" aria-label="이평 기간">
+      </label>
+      <div class="field window-field">
+        <span>구간</span>
+        <div class="dual-row">
+          <input class="date-input" id="start-date" type="date" aria-label="시작일">
+          <div class="dual" id="dual-range">
+            <div class="dual-track"></div>
+            <div class="dual-fill" id="dual-fill"></div>
+            <input id="start-range" type="range" min="0" max="0" value="0" aria-label="시작">
+            <input id="end-range" type="range" min="0" max="0" value="0" aria-label="끝">
+          </div>
+          <input class="date-input" id="end-date" type="date" aria-label="종료일">
+        </div>
+        <div class="choices" id="windows">
+          <button type="button" data-mode="daily" data-days="100">100일</button>
+          <button type="button" data-mode="daily" data-days="365">1년</button>
+          <button type="button" data-mode="daily" data-days="1095">3년</button>
+          <button type="button" data-mode="daily" data-days="all" aria-pressed="true">전체</button>
+          <button type="button" data-mode="scalp" data-seconds="600" hidden>10분</button>
+          <button type="button" data-mode="scalp" data-seconds="3600" hidden>1시간</button>
+          <button type="button" data-mode="scalp" data-seconds="10800" hidden>3시간</button>
+          <button type="button" data-mode="scalp" data-seconds="all" hidden>전체</button>
+        </div>
+      </div>
+    </section>
+    <div id="state" class="status">시세를 불러오는 중입니다.</div>
+    <div class="layout" id="board" hidden>
+      <div class="charts">
+        <section class="chart-card">
+          <div class="chart-head">
+            <strong id="price-title">가격</strong>
+            <div class="chart-tools">
+              <div class="zoom">
+                <button type="button" id="zoom-in" aria-label="확대">+</button>
+                <button type="button" id="zoom-out" aria-label="축소">−</button>
+              </div>
+              <div class="legend">
+              <span><i style="background: var(--close)"></i>종가</span>
+              <span id="ma-legend" data-page="daily"><i style="background: var(--ma)"></i>이평</span>
+              <span id="fast-legend" data-page="scalp" hidden><i style="background: var(--ma)"></i>1분 추세</span>
+              <span id="slow-legend" data-page="scalp" hidden><i style="background: #7eb6ff"></i>3분 추세</span>
+              <span><i style="background: var(--up)"></i>매수</span>
+              <span><i style="background: var(--down)"></i>매도</span>
+            </div>
+            </div>
+          </div>
+          <canvas id="price-chart" height="420"></canvas>
+        </section>
+        <section class="chart-card">
+          <div class="chart-head">
+            <strong id="equity-title">평가금</strong>
+          </div>
+          <canvas id="equity-chart" height="180"></canvas>
+        </section>
+        <section class="chart-card trades">
+          <div class="chart-head"><strong>이 구간의 체결</strong></div>
+          <p class="sub" id="trade-note"></p>
+          <table>
+            <thead>
+              <tr><th>구분</th><th id="trade-when">체결일</th><th>가격</th><th>평가금</th></tr>
+            </thead>
+            <tbody id="trades"></tbody>
+          </table>
+        </section>
+      </div>
+      <aside class="panel">
+        <h2>이 구간을 매매하면</h2>
+        <p class="start-amount" id="start-amount"><span>시작 금액</span>10,000 USDT</p>
+        <div class="stats" id="stats"></div>
+        <h2>규칙</h2>
+        <ul class="rule" id="rules">
+          <li>일봉 종가가 확정된 뒤에 판단합니다.</li>
+          <li>종가가 이평을 위로 돌파하면 다음 시가에 전액 매수합니다.</li>
+          <li>종가가 이평 아래로 마감하면 다음 시가에 전량 매도합니다.</li>
+          <li>구간 시작은 현금 10,000 USDT입니다. 수수료는 매수·매도마다 0.10%입니다.</li>
+        </ul>
+      </aside>
+    </div>
+  </main>
+  <script src="/strategy.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
