@@ -32,6 +32,16 @@ INSTRUMENTS = {
     "000270.KS": {"name": "기아", "source": "krx", "quote": "KRW", "venue": "코스피 현물 주식"},
     "035420.KS": {"name": "NAVER", "source": "krx", "quote": "KRW", "venue": "코스피 현물 주식"},
     "035720.KS": {"name": "카카오", "source": "krx", "quote": "KRW", "venue": "코스피 현물 주식"},
+    "^KQ11": {"name": "코스닥", "source": "krx", "quote": "KRW", "venue": "코스닥 종합지수"},
+    "229200.KS": {"name": "KODEX 코스닥150", "source": "krx", "quote": "KRW", "venue": "코스피 상장 ETF"},
+    "247540.KQ": {"name": "에코프로비엠", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "086520.KQ": {"name": "에코프로", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "196170.KQ": {"name": "알테오젠", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "028300.KQ": {"name": "HLB", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "041510.KQ": {"name": "에스엠", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "035900.KQ": {"name": "JYP Ent.", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "263750.KQ": {"name": "펄어비스", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "277810.KQ": {"name": "레인보우로보틱스", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
 }
 CACHE = {}
 
