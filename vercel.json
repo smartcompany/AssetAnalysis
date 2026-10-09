@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "regions": ["icn1"],
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 120,
+      "excludeFiles": "{public/**,.git/**,.githooks/**,__pycache__/**}"
+    }
+  }
+}

@@ -3,10 +3,10 @@
   const state = {
     bars: [],
     mode: "daily",
-    symbol: "BTCUSDT",
+    symbol: "BTC-USD",
     symbolName: "비트코인",
-    quote: "USDT",
-    venue: "바이비트 현물",
+    quote: "USD",
+    venue: "야후 파이낸스",
     saved: { daily: null, scalp: null },
     kind: "sma",
     period: 20,
@@ -833,7 +833,7 @@
           bars: data.bars,
           symbol: data.symbol,
           symbolName: data.name,
-          quote: data.quote || "USDT",
+          quote: data.quote || "USD",
           venue: data.venue || "",
           start: 0,
           end: data.bars.length - 1,
@@ -919,6 +919,29 @@
     });
   }
 
+  function kstStamp(ts) {
+    const shifted = new Date(ts + 9 * 3600 * 1000);
+    const pad = function (value) { return String(value).padStart(2, "0"); };
+    return shifted.getUTCFullYear() + "-" + pad(shifted.getUTCMonth() + 1) + "-" + pad(shifted.getUTCDate()) +
+      "T" + pad(shifted.getUTCHours()) + ":" + pad(shifted.getUTCMinutes()) + ":" + pad(shifted.getUTCSeconds());
+  }
+
+  function unpackScalp(data) {
+    if (!data.bars || !data.bars.length || !Array.isArray(data.bars[0])) return;
+    const origin = data.t0;
+    data.bars = data.bars.map(function (row) {
+      const ts = origin + row[0] * 1000;
+      return {
+        time: kstStamp(ts),
+        ts: ts,
+        open: row[1] / 100,
+        high: row[2] / 100,
+        low: row[3] / 100,
+        close: row[4] / 100,
+      };
+    });
+  }
+
   function loadScalp() {
     document.querySelectorAll("#tabs button").forEach(function (button) { button.disabled = true; });
     status.hidden = false;
@@ -929,12 +952,13 @@
       .then(function (response) { return response.json(); })
       .then(function (data) {
         if (data.error) throw new Error(data.error);
+        unpackScalp(data);
         if (!data.bars || data.bars.length < 60) throw new Error("초봉이 너무 적습니다.");
         const snapshot = {
           bars: data.bars,
           symbol: data.symbol,
           symbolName: data.name,
-          quote: data.quote || "USDT",
+          quote: data.quote || "USD",
           venue: data.venue || "",
           start: 0,
           end: data.bars.length - 1,
@@ -986,5 +1010,5 @@
     loadSymbol(symbolSelect.value);
   });
 
-  loadSymbol("BTCUSDT");
+  loadSymbol("BTC-USD");
 })();

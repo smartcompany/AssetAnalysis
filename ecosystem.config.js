@@ -10,7 +10,7 @@ module.exports = {
         HOST: "0.0.0.0",
         PORT: "8787",
       },
-      watch: ["server.py", "index.html", "app.js", "strategy.js"],
+      watch: ["server.py", "market.py", "public/index.html", "public/app.js", "public/strategy.js"],
       ignore_watch: ["__pycache__", "*.pyc", ".git"],
       watch_delay: 2000,
       autorestart: true,

@@ -191,19 +191,19 @@
     </nav>
     <header>
       <h1 id="page-title">현물 이평선 매매</h1>
-      <p class="sub" id="range-note">바이비트 현물 일봉을 상장일부터 불러옵니다.</p>
+      <p class="sub" id="range-note">야후 파이낸스 일봉을 있는 기간만큼 불러옵니다.</p>
     </header>
     <section class="controls">
       <div class="field" data-page="daily">
         <span>종목</span>
         <select id="symbols" class="symbol-select" aria-label="종목">
           <optgroup label="코인">
-            <option value="BTCUSDT">비트코인</option>
-            <option value="ETHUSDT">이더리움</option>
-            <option value="SOLUSDT">솔라나</option>
-            <option value="XRPUSDT">리플</option>
-            <option value="DOGEUSDT">도지코인</option>
-            <option value="BNBUSDT">바이낸스코인</option>
+            <option value="BTC-USD">비트코인</option>
+            <option value="ETH-USD">이더리움</option>
+            <option value="SOL-USD">솔라나</option>
+            <option value="XRP-USD">리플</option>
+            <option value="DOGE-USD">도지코인</option>
+            <option value="BNB-USD">바이낸스코인</option>
           </optgroup>
           <optgroup label="미국 주식">
             <option value="AAPL">애플</option>
@@ -266,6 +266,8 @@
           <button type="button" data-mode="daily" data-days="365">1년</button>
           <button type="button" data-mode="daily" data-days="1095">3년</button>
           <button type="button" data-mode="daily" data-years="5">5년</button>
+          <button type="button" data-mode="daily" data-years="7">7년</button>
+          <button type="button" data-mode="daily" data-years="10">10년</button>
           <button type="button" data-mode="daily" data-days="all" aria-pressed="true">전체</button>
           <button type="button" data-mode="scalp" data-seconds="600" hidden>10분</button>
           <button type="button" data-mode="scalp" data-seconds="3600" hidden>1시간</button>
@@ -316,14 +318,14 @@
       </div>
       <aside class="panel">
         <h2>이 구간을 매매하면</h2>
-        <p class="start-amount" id="start-amount"><span>시작 금액</span>10,000 USDT</p>
+        <p class="start-amount" id="start-amount"><span>시작 금액</span>10,000 USD</p>
         <div class="stats" id="stats"></div>
         <h2>규칙</h2>
         <ul class="rule" id="rules">
           <li>일봉 종가가 확정된 뒤에 판단합니다.</li>
           <li>종가가 이평을 위로 돌파하면 다음 시가에 전액 매수합니다.</li>
           <li>종가가 이평 아래로 마감하면 다음 시가에 전량 매도합니다.</li>
-          <li>구간 시작은 현금 10,000 USDT입니다. 수수료는 매수·매도마다 0.10%입니다.</li>
+          <li>구간 시작은 현금 10,000 USD입니다. 수수료는 매수·매도마다 0.10%입니다.</li>
         </ul>
       </aside>
     </div>
