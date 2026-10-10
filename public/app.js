@@ -659,6 +659,8 @@
   });
 
   function setRange(start, end, anchor, preserve) {
+    const shiftNote = document.getElementById("shift-note");
+    if (shiftNote) shiftNote.hidden = true;
     state.view = null;
     const last = state.bars.length - 1;
     const minSpan = Math.min(state.mode === "scalp" ? 59 : 29, last);
@@ -751,6 +753,148 @@
     });
     return best;
   }
+
+  const rangeFill = document.getElementById("dual-fill");
+  let rangeShift = null;
+
+  function indexAtPointer(clientX) {
+    const dual = document.getElementById("dual-range");
+    const span = Math.max(dual.clientWidth - 16, 1);
+    const last = Math.max(state.bars.length - 1, 1);
+    return ((clientX - dual.getBoundingClientRect().left - 8) / span) * last;
+  }
+
+  rangeFill.addEventListener("pointerdown", function (event) {
+    if (!state.bars.length || event.button !== 0) return;
+    rangeShift = {
+      pointerId: event.pointerId,
+      origin: indexAtPointer(event.clientX),
+      start: state.startIndex,
+      end: state.endIndex,
+    };
+    rangeFill.setPointerCapture(event.pointerId);
+    rangeFill.classList.add("dragging");
+    event.preventDefault();
+  });
+  rangeFill.addEventListener("pointermove", function (event) {
+    if (!rangeShift || event.pointerId !== rangeShift.pointerId) return;
+    const delta = Math.round(indexAtPointer(event.clientX) - rangeShift.origin);
+    const width = rangeShift.end - rangeShift.start;
+    const last = state.bars.length - 1;
+    let start = rangeShift.start + delta;
+    let end = rangeShift.end + delta;
+    if (start < 0) {
+      start = 0;
+      end = width;
+    }
+    if (end > last) {
+      end = last;
+      start = Math.max(0, last - width);
+    }
+    if (start === state.startIndex && end === state.endIndex) return;
+    setRange(start, end, "both", true);
+  });
+  function stopRangeShift(event) {
+    if (!rangeShift || event.pointerId !== rangeShift.pointerId) return;
+    rangeShift = null;
+    rangeFill.classList.remove("dragging");
+  }
+  rangeFill.addEventListener("pointerup", stopRangeShift);
+  rangeFill.addEventListener("pointercancel", stopRangeShift);
+
+  function indexAtOrAfterTs(ts) {
+    const found = state.bars.findIndex(function (bar) { return bar.ts >= ts; });
+    return found === -1 ? state.bars.length - 1 : found;
+  }
+
+  function indexAtOrBeforeTs(ts) {
+    for (let index = state.bars.length - 1; index >= 0; index -= 1) {
+      if (state.bars[index].ts <= ts) return index;
+    }
+    return 0;
+  }
+
+  function dateParts(ts) {
+    const date = new Date(ts);
+    return { year: date.getUTCFullYear(), month: date.getUTCMonth(), day: date.getUTCDate() };
+  }
+
+  function daysInMonth(year, month) {
+    return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  }
+
+  function calendarDiff(startTs, endTs) {
+    const start = dateParts(startTs);
+    const end = dateParts(endTs);
+    let years = end.year - start.year;
+    let months = end.month - start.month;
+    let days = end.day - start.day;
+    if (days < 0) {
+      months -= 1;
+      const previous = end.month === 0 ? 11 : end.month - 1;
+      const year = end.month === 0 ? end.year - 1 : end.year;
+      days += daysInMonth(year, previous);
+    }
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+    return { years: years, months: months, days: days };
+  }
+
+  function addCalendar(ts, diff, sign) {
+    const part = dateParts(ts);
+    const totalMonths = part.year * 12 + part.month + sign * (diff.years * 12 + diff.months);
+    const year = Math.floor(totalMonths / 12);
+    const month = ((totalMonths % 12) + 12) % 12;
+    const day = Math.min(part.day, daysInMonth(year, month));
+    return Date.UTC(year, month, day) + sign * diff.days * 86400000;
+  }
+
+  function shiftWindow(direction) {
+    const note = document.getElementById("shift-note");
+    const startBar = state.bars[state.startIndex];
+    const endBar = state.bars[state.endIndex];
+    let nextStartTs;
+    let nextEndTs;
+    if (state.mode === "scalp") {
+      const duration = endBar.ts - startBar.ts;
+      nextStartTs = direction < 0 ? startBar.ts - 1000 - duration : endBar.ts + 1000;
+      nextEndTs = nextStartTs + duration;
+    } else {
+      const diff = calendarDiff(startBar.ts, endBar.ts);
+      if (direction < 0) {
+        nextEndTs = startBar.ts - 86400000;
+        nextStartTs = addCalendar(nextEndTs, diff, -1);
+      } else {
+        nextStartTs = endBar.ts + 86400000;
+        nextEndTs = addCalendar(nextStartTs, diff, 1);
+      }
+    }
+    const firstTs = state.bars[0].ts;
+    const lastTs = state.bars[state.bars.length - 1].ts;
+    const fits = nextStartTs >= firstTs && nextEndTs <= lastTs;
+    if (!fits) {
+      note.hidden = false;
+      note.textContent = direction < 0
+        ? "이전으로 같은 길이만큼 옮길 수 없습니다."
+        : "이후로 같은 길이만큼 옮길 수 없습니다.";
+      return;
+    }
+    const start = indexAtOrAfterTs(nextStartTs);
+    const end = indexAtOrBeforeTs(nextEndTs);
+    if (end <= start) {
+      note.hidden = false;
+      note.textContent = direction < 0
+        ? "이전으로 같은 길이만큼 옮길 수 없습니다."
+        : "이후로 같은 길이만큼 옮길 수 없습니다.";
+      return;
+    }
+    setRange(start, end, "both", true);
+  }
+
+  document.getElementById("shift-back").addEventListener("click", function () { shiftWindow(-1); });
+  document.getElementById("shift-forward").addEventListener("click", function () { shiftWindow(1); });
 
   document.getElementById("start-range").addEventListener("pointerdown", function () {
     this.style.zIndex = "3";

@@ -66,6 +66,16 @@
     }
     .window-field { flex: 1 1 100%; gap: 8px; }
     .dual-row { display: flex; align-items: center; gap: 10px; }
+    .dual-col { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 4px; }
+    .shift-row { display: flex; justify-content: center; gap: 8px; }
+    .shift-row button {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 12px;
+      cursor: pointer;
+    }
+    .shift-note { margin: 0; text-align: center; color: var(--down); font-size: 12px; }
     .dual {
       position: relative;
       flex: 1;
@@ -81,7 +91,21 @@
       pointer-events: none;
     }
     .dual-track { left: 8px; right: 8px; background: var(--line); }
-    .dual-fill { background: var(--ma); }
+    .dual-fill {
+      background: var(--ma);
+      pointer-events: auto;
+      cursor: grab;
+      touch-action: none;
+    }
+    .dual-fill::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -12px;
+      height: 28px;
+    }
+    .dual-fill.dragging { cursor: grabbing; }
     .dual input[type="range"] {
       grid-area: 1 / 1;
       appearance: none;
@@ -265,11 +289,18 @@
         <span>구간</span>
         <div class="dual-row">
           <input class="date-input" id="start-date" type="date" aria-label="시작일">
+          <div class="dual-col">
+            <div class="shift-row">
+              <button type="button" id="shift-back" aria-label="이전 구간">&lt;&lt;</button>
+              <button type="button" id="shift-forward" aria-label="다음 구간">&gt;&gt;</button>
+            </div>
+            <p id="shift-note" class="shift-note" hidden></p>
           <div class="dual" id="dual-range">
             <div class="dual-track"></div>
-            <div class="dual-fill" id="dual-fill"></div>
+            <div class="dual-fill" id="dual-fill" aria-label="구간 이동"></div>
             <input id="start-range" type="range" min="0" max="0" value="0" aria-label="시작">
             <input id="end-range" type="range" min="0" max="0" value="0" aria-label="끝">
+          </div>
           </div>
           <input class="date-input" id="end-date" type="date" aria-label="종료일">
         </div>
