@@ -4,7 +4,7 @@ import calendar
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 DAY_MS = 86_400_000
@@ -17,6 +17,12 @@ INSTRUMENTS = {
     "XRP-USD": {"name": "리플", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
     "DOGE-USD": {"name": "도지코인", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
     "BNB-USD": {"name": "바이낸스코인", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
+    "^NDX": {"name": "나스닥 100", "source": "nasdaq", "quote": "USD", "venue": "나스닥 100 지수"},
+    "QQQ": {"name": "QQQ", "source": "nasdaq", "quote": "USD", "venue": "나스닥 100 ETF"},
+    "^GSPC": {"name": "S&P 500", "source": "nasdaq", "quote": "USD", "venue": "S&P 500 지수"},
+    "^DJI": {"name": "다우존스", "source": "nasdaq", "quote": "USD", "venue": "다우존스 산업지수"},
+    "^SOX": {"name": "필라델피아 반도체", "source": "nasdaq", "quote": "USD", "venue": "필라델피아 반도체 지수"},
+    "^RUT": {"name": "러셀 2000", "source": "nasdaq", "quote": "USD", "venue": "러셀 2000 지수"},
     "AAPL": {"name": "애플", "source": "nasdaq", "quote": "USD", "venue": "나스닥 현물 주식"},
     "MSFT": {"name": "마이크로소프트", "source": "nasdaq", "quote": "USD", "venue": "나스닥 현물 주식"},
     "NVDA": {"name": "엔비디아", "source": "nasdaq", "quote": "USD", "venue": "나스닥 현물 주식"},
@@ -24,6 +30,8 @@ INSTRUMENTS = {
     "GOOGL": {"name": "알파벳", "source": "nasdaq", "quote": "USD", "venue": "나스닥 현물 주식"},
     "META": {"name": "메타", "source": "nasdaq", "quote": "USD", "venue": "나스닥 현물 주식"},
     "TSLA": {"name": "테슬라", "source": "nasdaq", "quote": "USD", "venue": "나스닥 현물 주식"},
+    "^KS11": {"name": "코스피", "source": "krx", "quote": "KRW", "venue": "코스피 종합지수"},
+    "069500.KS": {"name": "KODEX 200", "source": "krx", "quote": "KRW", "venue": "코스피 상장 ETF"},
     "005930.KS": {"name": "삼성전자", "source": "krx", "quote": "KRW", "venue": "코스피 현물 주식"},
     "000660.KS": {"name": "SK하이닉스", "source": "krx", "quote": "KRW", "venue": "코스피 현물 주식"},
     "373220.KS": {"name": "LG에너지솔루션", "source": "krx", "quote": "KRW", "venue": "코스피 현물 주식"},
@@ -42,6 +50,7 @@ INSTRUMENTS = {
     "035900.KQ": {"name": "JYP Ent.", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
     "263750.KQ": {"name": "펄어비스", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
     "277810.KQ": {"name": "레인보우로보틱스", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
+    "SEOUL-APT": {"name": "서울 아파트", "source": "housing", "quote": "지수", "venue": "KB부동산 월간 아파트 매매가격지수"},
 }
 CACHE = {}
 
@@ -55,8 +64,11 @@ def fetch_bars(symbol):
     if cached is not None and now - cached["at"] < 300:
         return cached["payload"]
 
-    close_hour = {"krx": 7, "nasdaq": 21}.get(spec["source"])
-    bars = fetch_yahoo(symbol, now, close_hour)
+    if spec["source"] == "housing":
+        bars = fetch_seoul_housing(now)
+    else:
+        close_hour = {"krx": 7, "nasdaq": 21}.get(spec["source"])
+        bars = fetch_yahoo(symbol, now, close_hour)
     result = {
         "symbol": symbol,
         "name": spec["name"],
@@ -68,6 +80,42 @@ def fetch_bars(symbol):
     }
     CACHE[symbol] = {"at": now, "payload": result}
     return result
+
+
+def fetch_seoul_housing(now):
+    url = (
+        "https://data-api.kbland.kr/bfmstat/weekMnthlyHuseTrnd/priceIndex?"
+        + urlencode({
+            "월간주간구분코드": "01",
+            "매물종별구분": "01",
+            "매매전세코드": "01",
+            "지역코드": "11",
+            "기간": "100",
+        })
+    )
+    payload = get_json(url, "Mozilla/5.0")
+    header = payload.get("dataHeader") or {}
+    if str(header.get("resultCode")) != "10000":
+        raise RuntimeError(header.get("message") or "서울 부동산 시세를 가져오지 못했습니다.")
+    data = (payload.get("dataBody") or {}).get("data") or {}
+    dates = data.get("날짜리스트") or []
+    rows = data.get("데이터리스트") or []
+    seoul = next((row for row in rows if row.get("지역명") == "서울"), None)
+    if seoul is None or not dates:
+        raise RuntimeError("서울 아파트 매매가격지수를 찾지 못했습니다.")
+    bars = []
+    for stamp, value in zip(dates, seoul["dataList"]):
+        if value is None:
+            continue
+        year = int(stamp[:4])
+        month = int(stamp[4:6])
+        _, count = calendar.monthrange(year, month)
+        for day in range(1, count + 1):
+            ts = calendar.timegm((year, month, day, 0, 0, 0))
+            if ts + DAY_MS // 1000 > now:
+                return bars
+            bars.append(bar(ts * 1000, value, value, value, value))
+    return bars
 
 
 def fetch_yahoo(symbol, now, close_hour):
