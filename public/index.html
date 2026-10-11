@@ -202,23 +202,93 @@
     .trades { margin-top: 16px; max-height: 280px; overflow: auto; }
     .status { color: var(--muted); padding: 28px 8px; }
     .error { color: var(--down); }
+    .news-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .news-list a {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      color: inherit;
+      text-decoration: none;
+    }
+    .news-list a:hover { border-color: var(--ma); }
+    .news-list strong { display: block; font-size: 16px; line-height: 1.4; }
+    .news-meta { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .news-list p { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .news-translate { margin: 0 0 12px; }
+    .news-translate button, .news-back {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 14px;
+      cursor: pointer;
+    }
+    .news-reader { max-width: 760px; }
+    .news-reader h2 { margin: 14px 0 8px; font-size: 24px; line-height: 1.35; letter-spacing: -0.02em; }
+    .article-source { margin: 0 0 18px; color: var(--muted); font-size: 12px; }
+    .article-text p { margin: 0 0 16px; font-size: 16px; line-height: 1.75; }
+    .x-login, .x-post {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .x-login p { margin: 0 0 12px; color: var(--muted); }
+    .x-login a { color: var(--ma); }
+    .x-form { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+    .x-form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .x-form input {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .x-login-button, .x-account button {
+      display: inline-block;
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 14px;
+      color: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .x-account { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; color: var(--muted); }
+    .x-list { margin-top: 12px; }
+    .x-post strong { display: block; font-size: 18px; line-height: 1.4; }
+    .x-post .news-meta { font-size: 14px; }
+    .x-post .x-text { margin: 12px 0 0; color: var(--text); font-size: 18px; line-height: 1.7; white-space: pre-wrap; }
+    .x-list .x-post a.x-link {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 0;
+      background: none;
+      border: 0;
+      border-radius: 0;
+      color: var(--ma);
+      font-size: 16px;
+      text-decoration: none;
+    }
+    .x-list .x-post a.x-link:hover { border-color: transparent; text-decoration: underline; }
     @media (max-width: 860px) {
       .layout { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <main class="app">
+  <main class="app" translate="no">
     <nav class="tabs" id="tabs">
       <button type="button" data-tab="daily" aria-pressed="true">일봉</button>
-      <button type="button" data-tab="scalp" aria-pressed="false">단타</button>
+      <button type="button" data-tab="news" aria-pressed="false">뉴스</button>
+      <button type="button" data-tab="x" aria-pressed="false">X</button>
     </nav>
     <header>
       <h1 id="page-title">현물 이평선 매매</h1>
       <p class="sub" id="range-note">야후 파이낸스 일봉을 있는 기간만큼 불러옵니다.</p>
     </header>
     <section class="controls">
-      <div class="field" data-page="daily">
+      <div class="field">
         <span>종목</span>
         <select id="symbols" class="symbol-select" aria-label="종목">
           <optgroup label="코인">
@@ -228,6 +298,8 @@
             <option value="XRP-USD">리플</option>
             <option value="DOGE-USD">도지코인</option>
             <option value="BNB-USD">바이낸스코인</option>
+            <option value="ZEC-USD">지캐시</option>
+            <option value="XMR-USD">모네로</option>
           </optgroup>
           <optgroup label="미국 주식">
             <option value="^NDX">나스닥 100</option>
@@ -243,6 +315,17 @@
             <option value="GOOGL">알파벳</option>
             <option value="META">메타</option>
             <option value="TSLA">테슬라</option>
+          </optgroup>
+          <optgroup label="xStock">
+            <option value="QQQX-USD">QQQ</option>
+            <option value="SPYX-USD">S&amp;P 500</option>
+            <option value="AAPLX-USD">애플</option>
+            <option value="MSFTX-USD">마이크로소프트</option>
+            <option value="NVDAX-USD">엔비디아</option>
+            <option value="AMZNX-USD">아마존</option>
+            <option value="GOOGLX-USD">알파벳</option>
+            <option value="METAX37055-USD">메타</option>
+            <option value="TSLAX-USD">테슬라</option>
           </optgroup>
           <optgroup label="코스피">
             <option value="^KS11">코스피</option>
@@ -296,7 +379,7 @@
         <span>직접 입력</span>
         <input class="period-input" id="custom-period" type="number" min="2" max="200" step="1" value="20" aria-label="이평 기간">
       </label>
-      <div class="field window-field">
+      <div class="field window-field" data-page="daily">
         <span>구간</span>
         <div class="dual-row">
           <input class="date-input" id="start-date" type="date" aria-label="시작일">
@@ -323,14 +406,44 @@
           <button type="button" data-mode="daily" data-years="7">7년</button>
           <button type="button" data-mode="daily" data-years="10">10년</button>
           <button type="button" data-mode="daily" data-days="all" aria-pressed="true">전체</button>
-          <button type="button" data-mode="scalp" data-seconds="600" hidden>10분</button>
-          <button type="button" data-mode="scalp" data-seconds="3600" hidden>1시간</button>
-          <button type="button" data-mode="scalp" data-seconds="10800" hidden>3시간</button>
-          <button type="button" data-mode="scalp" data-seconds="all" hidden>전체</button>
         </div>
       </div>
     </section>
     <div id="state" class="status">시세를 불러오는 중입니다.</div>
+    <section id="news" data-page="news" hidden>
+      <div id="news-state" class="status">뉴스를 불러오는 중입니다.</div>
+      <p id="news-translate" class="news-translate" hidden>
+        <button type="button" id="news-translate-button">브라우저 번역으로 한글로 바꾸기</button>
+      </p>
+      <ul id="news-list" class="news-list" translate="yes"></ul>
+      <article id="news-reader" class="news-reader" hidden>
+        <button type="button" id="news-back" class="news-back">목록</button>
+        <div id="article-state" class="status">기사 본문을 불러오는 중입니다.</div>
+        <h2 id="article-title"></h2>
+        <p id="article-source" class="article-source"></p>
+        <div id="article-text" class="article-text" translate="yes"></div>
+      </article>
+    </section>
+    <section id="x-feed" data-page="x" hidden>
+      <div id="x-login" class="x-login">
+        <p id="x-login-copy">X 개발자 앱의 Client ID와 Client Secret을 저장하면 이어서 X 로그인이 열립니다. 콜백 주소는 http://127.0.0.1:8787/api/x/callback 입니다. <a href="https://console.x.com" target="_blank" rel="noopener noreferrer">Client ID와 Secret 발급 페이지</a></p>
+        <form id="x-config" class="x-form">
+          <label>Client ID<input id="x-client-id" name="clientId" autocomplete="off" required></label>
+          <label>Client Secret<input id="x-client-secret" name="clientSecret" type="password" autocomplete="off" required></label>
+          <button type="submit" class="x-login-button">저장하고 X로 로그인</button>
+        </form>
+        <p id="x-setup" hidden></p>
+        <a id="x-login-button" class="x-login-button" href="/api/x/login" hidden>X로 로그인</a>
+      </div>
+      <div id="x-session" hidden>
+        <p class="x-account"><span id="x-account"></span><button type="button" id="x-logout">로그아웃</button></p>
+      </div>
+      <div id="x-state" class="status" hidden></div>
+      <p id="x-translate" class="news-translate" hidden>
+        <button type="button" id="x-translate-button">브라우저 번역으로 한글로 바꾸기</button>
+      </p>
+      <ul id="x-list" class="news-list x-list"></ul>
+    </section>
     <div class="layout" id="board" hidden>
       <div class="charts">
         <section class="chart-card">
@@ -343,9 +456,7 @@
               </div>
               <div class="legend">
               <span><i style="background: var(--close)"></i>종가</span>
-              <span id="ma-legend" data-page="daily"><i style="background: var(--ma)"></i>이평</span>
-              <span id="fast-legend" data-page="scalp" hidden><i style="background: var(--ma)"></i>1분 추세</span>
-              <span id="slow-legend" data-page="scalp" hidden><i style="background: #7eb6ff"></i>3분 추세</span>
+              <span id="ma-legend"><i style="background: var(--ma)"></i>이평</span>
               <span><i style="background: var(--up)"></i>매수</span>
               <span><i style="background: var(--down)"></i>매도</span>
             </div>

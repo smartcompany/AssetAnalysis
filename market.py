@@ -1,11 +1,18 @@
 """Spot prices from Yahoo Finance, and Bitcoin 1-second bars from Binance."""
 
 import calendar
+import html
+import ipaddress
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from datetime import timedelta, timezone
+from email.utils import parsedate_to_datetime
+from urllib.error import HTTPError
+from urllib.parse import quote, urlencode, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from xml.etree import ElementTree
 
 DAY_MS = 86_400_000
 SCALP_SECONDS = 24 * 60 * 60
@@ -17,6 +24,17 @@ INSTRUMENTS = {
     "XRP-USD": {"name": "리플", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
     "DOGE-USD": {"name": "도지코인", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
     "BNB-USD": {"name": "바이낸스코인", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
+    "ZEC-USD": {"name": "지캐시", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
+    "XMR-USD": {"name": "모네로", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
+    "QQQX-USD": {"name": "QQQ", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "SPYX-USD": {"name": "S&P 500", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "AAPLX-USD": {"name": "애플", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "MSFTX-USD": {"name": "마이크로소프트", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "NVDAX-USD": {"name": "엔비디아", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "AMZNX-USD": {"name": "아마존", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "GOOGLX-USD": {"name": "알파벳", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "METAX37055-USD": {"name": "메타", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
+    "TSLAX-USD": {"name": "테슬라", "source": "crypto", "quote": "USD", "venue": "xStock 토큰"},
     "^NDX": {"name": "나스닥 100", "source": "nasdaq", "quote": "USD", "venue": "나스닥 100 지수"},
     "QQQ": {"name": "QQQ", "source": "nasdaq", "quote": "USD", "venue": "나스닥 100 ETF"},
     "^GSPC": {"name": "S&P 500", "source": "nasdaq", "quote": "USD", "venue": "S&P 500 지수"},
@@ -53,6 +71,20 @@ INSTRUMENTS = {
     "SEOUL-APT": {"name": "서울 아파트", "source": "housing", "quote": "지수", "venue": "KB부동산 월간 아파트 매매가격지수"},
 }
 CACHE = {}
+NEWS_CACHE = {}
+ARTICLE_CACHE = {}
+KST = timezone(timedelta(hours=9))
+NEWS_UNDERLYING = {
+    "QQQX-USD": "QQQ",
+    "SPYX-USD": "SPY",
+    "AAPLX-USD": "AAPL",
+    "MSFTX-USD": "MSFT",
+    "NVDAX-USD": "NVDA",
+    "AMZNX-USD": "AMZN",
+    "GOOGLX-USD": "GOOGL",
+    "METAX37055-USD": "META",
+    "TSLAX-USD": "TSLA",
+}
 
 
 def fetch_bars(symbol):
@@ -116,6 +148,242 @@ def fetch_seoul_housing(now):
                 return bars
             bars.append(bar(ts * 1000, value, value, value, value))
     return bars
+
+
+def fetch_news(symbol):
+    spec = INSTRUMENTS.get(symbol)
+    if spec is None:
+        raise ValueError("unknown symbol")
+    now = time.time()
+    cached = NEWS_CACHE.get(symbol)
+    if cached is not None and now - cached["at"] < 600:
+        return cached["payload"]
+    if symbol == "SEOUL-APT":
+        items = read_rss(
+            "https://news.google.com/rss/search?q=%s&hl=ko&gl=KR&ceid=KR:ko" % quote("서울 아파트 매매"),
+            google=True,
+        )
+        source = "구글 뉴스"
+    else:
+        query = NEWS_UNDERLYING.get(symbol, symbol)
+        korean = query.endswith(".KS") or query.endswith(".KQ") or query in ("^KS11", "^KQ11")
+        region = "KR" if korean else "US"
+        lang = "ko-KR" if korean else "en-US"
+        items = read_rss(
+            "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%s&region=%s&lang=%s"
+            % (quote(query), region, lang)
+        )
+        source = "야후 파이낸스"
+    result = {
+        "symbol": symbol,
+        "name": spec["name"],
+        "source": source,
+        "items": items[:12],
+    }
+    NEWS_CACHE[symbol] = {"at": now, "payload": result}
+    return result
+
+
+def fetch_article(url):
+    if not isinstance(url, str) or not url:
+        raise ValueError("기사 주소가 없습니다.")
+    now = time.time()
+    cached = ARTICLE_CACHE.get(url)
+    if cached is not None and now - cached["at"] < 600:
+        return cached["payload"]
+    target = resolve_article_url(url)
+    if not allowed_article_url(target):
+        raise ValueError("기사 주소를 열 수 없습니다.")
+    raw, final_url = read_html(target)
+    title, paragraphs = extract_article(raw)
+    if not paragraphs:
+        raise RuntimeError("기사 본문을 찾지 못했습니다.")
+    host = urlparse(final_url).netloc
+    if host.startswith("www."):
+        host = host[4:]
+    result = {"url": final_url, "title": title, "source": host, "paragraphs": paragraphs[:30]}
+    ARTICLE_CACHE[url] = {"at": now, "payload": result}
+    return result
+
+
+def allowed_article_url(url):
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme != "https" or not host or host == "localhost" or host.endswith(".local"):
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None and (
+        address.is_private or address.is_loopback or address.is_link_local
+        or address.is_reserved or address.is_multicast
+    ):
+        return False
+    return True
+
+
+class ArticleRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not allowed_article_url(newurl):
+            raise HTTPError(req.full_url, code, "redirect blocked", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def read_html(url):
+    request = Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+    })
+    opener = build_opener(ArticleRedirect)
+    with opener.open(request, timeout=20) as response:
+        final_url = response.geturl()
+        if not allowed_article_url(final_url):
+            raise ValueError("기사 주소를 열 수 없습니다.")
+        raw = response.read(2_000_000)
+        charset = response.headers.get_content_charset() or "utf-8"
+    return raw.decode(charset, "replace"), final_url
+
+
+def resolve_article_url(url):
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host != "news.google.com" or "/articles/" not in parsed.path:
+        return url
+    article_id = parsed.path.rstrip("/").split("/")[-1]
+    if not article_id:
+        return url
+    try:
+        page, _final = read_html(url)
+    except Exception:
+        return url
+    timestamp = re.search(r'data-n-a-ts="(\d+)"', page)
+    signature = re.search(r'data-n-a-sg="([^"]+)"', page)
+    if timestamp is None or signature is None:
+        return url
+    inner = json.dumps([
+        "garturlreq",
+        [["X", "X", ["X", "X"], None, None, 1, 1, "KR:ko", None, 1, None, None, None, None, None, 0, 1],
+         "X", "X", 1, [1, 1, 1], 1, 1, None, 0, 0, None, 0],
+        article_id,
+        int(timestamp.group(1)),
+        signature.group(1),
+    ], separators=(",", ":"))
+    payload = json.dumps([[["Fbv4je", inner, None, "generic"]]], separators=(",", ":"))
+    request = Request(
+        "https://news.google.com/_/DotsSplashUi/data/batchexecute?rpcids=Fbv4je",
+        data=("f.req=" + quote(payload)).encode(),
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "User-Agent": "Mozilla/5.0",
+            "Referer": url,
+        },
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            text = response.read().decode("utf-8", "replace")
+        rows = json.loads(text.split("\n\n", 1)[1])
+        decoded = json.loads(rows[0][2])
+    except (HTTPError, IndexError, json.JSONDecodeError, TypeError, ValueError, TimeoutError, OSError):
+        return url
+    if isinstance(decoded, list) and len(decoded) >= 2 and decoded[0] == "garturlres" and decoded[1].startswith("https://"):
+        return decoded[1]
+    return url
+
+
+def extract_article(raw):
+    cleaned = re.sub(r"<script\b[^>]*>.*?</script>", " ", raw, flags=re.I | re.S)
+    cleaned = re.sub(r"<style\b[^>]*>.*?</style>", " ", cleaned, flags=re.I | re.S)
+    title = meta_content(cleaned, "og:title") or tag_text(cleaned, "title")
+    paragraphs = []
+    yahoo = re.findall(
+        r"<p\b[^>]*>\s*<!-- HTML_TAG_START -->(.*?)<!-- HTML_TAG_END -->",
+        cleaned,
+        flags=re.S,
+    )
+    for part in yahoo:
+        text = plain_text(part)
+        if prose(text):
+            paragraphs.append(text)
+    if len(paragraphs) < 2:
+        for part in re.findall(r"<p\b[^>]*>(.*?)</p>", cleaned, flags=re.S):
+            text = plain_text(part)
+            if prose(text) and text not in paragraphs:
+                paragraphs.append(text)
+    return title, paragraphs
+
+
+def meta_content(raw, prop):
+    patterns = (
+        r'<meta[^>]+property="%s"[^>]+content="([^"]*)"' % re.escape(prop),
+        r'<meta[^>]+content="([^"]*)"[^>]+property="%s"' % re.escape(prop),
+    )
+    for pattern in patterns:
+        match = re.search(pattern, raw, flags=re.I)
+        if match:
+            return plain_text(match.group(1))
+    return ""
+
+
+def tag_text(raw, tag):
+    match = re.search(r"<%s[^>]*>(.*?)</%s>" % (tag, tag), raw, flags=re.I | re.S)
+    return plain_text(match.group(1)) if match else ""
+
+
+def plain_text(value):
+    text = re.sub(r"<[^>]+>", " ", value or "")
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
+def prose(text):
+    if len(text) < 40 or text[0] in "{[<":
+        return False
+    if text.startswith(("function", "(function", "if ", "var ", "window.", "const ", "let ")):
+        return False
+    letters = len(re.findall(r"[A-Za-z가-힣]", text))
+    return letters >= 30
+
+
+def read_rss(url, google=False):
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(request, timeout=20) as response:
+        root = ElementTree.fromstring(response.read())
+    channel = root.find("channel")
+    if channel is None:
+        return []
+    items = []
+    for item in channel.findall("item"):
+        title = re.sub(r"\s+", " ", item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        summary = re.sub(r"<[^>]+>", "", item.findtext("description") or "")
+        summary = re.sub(r"\s+", " ", html.unescape(summary)).strip()
+        publisher = ""
+        if google and " - " in title:
+            title, publisher = title.rsplit(" - ", 1)
+        elif link.startswith("http"):
+            publisher = urlparse(link).netloc
+            if publisher.startswith("www."):
+                publisher = publisher[4:]
+        published = ""
+        raw_date = item.findtext("pubDate")
+        if raw_date:
+            try:
+                published = parsedate_to_datetime(raw_date).astimezone(KST).strftime("%Y-%m-%d %H:%M")
+            except (TypeError, ValueError, OverflowError):
+                published = ""
+        if not title or not link.startswith("http"):
+            continue
+        if summary == title:
+            summary = ""
+        items.append({
+            "title": title,
+            "link": link,
+            "publisher": publisher,
+            "published": published,
+            "summary": summary,
+        })
+    return items
 
 
 def fetch_yahoo(symbol, now, close_hour):

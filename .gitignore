@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+.env.local
+.x-session.json
+x-client.json
