@@ -137,6 +137,7 @@
       padding: 6px 8px;
     }
     .period-input { width: 76px; border-radius: 8px; background: var(--panel); }
+    .price-input { width: 112px; }
     .symbol-select {
       min-width: 196px;
       background: var(--panel);
@@ -224,6 +225,13 @@
       padding: 7px 14px;
       cursor: pointer;
     }
+    .news-back {
+      position: sticky;
+      top: 12px;
+      z-index: 3;
+      background: var(--panel);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
     .news-reader { max-width: 760px; }
     .news-reader h2 { margin: 14px 0 8px; font-size: 24px; line-height: 1.35; letter-spacing: -0.02em; }
     .article-source { margin: 0 0 18px; color: var(--muted); font-size: 12px; }
@@ -280,6 +288,7 @@
   <main class="app" translate="no">
     <nav class="tabs" id="tabs">
       <button type="button" data-tab="daily" aria-pressed="true">일봉</button>
+      <button type="button" data-tab="stable" aria-pressed="false">스테이블 코인</button>
       <button type="button" data-tab="news" aria-pressed="false">뉴스</button>
       <button type="button" data-tab="x" aria-pressed="false">X</button>
     </nav>
@@ -288,7 +297,7 @@
       <p class="sub" id="range-note">야후 파이낸스 일봉을 있는 기간만큼 불러옵니다.</p>
     </header>
     <section class="controls">
-      <div class="field">
+      <div class="field" data-page="daily news x">
         <span>종목</span>
         <select id="symbols" class="symbol-select" aria-label="종목">
           <optgroup label="코인">
@@ -379,7 +388,25 @@
         <span>직접 입력</span>
         <input class="period-input" id="custom-period" type="number" min="2" max="200" step="1" value="20" aria-label="이평 기간">
       </label>
-      <div class="field window-field" data-page="daily">
+      <div class="field" data-page="stable" hidden>
+        <span>종목</span>
+        <div class="choices">
+          <button type="button" aria-pressed="true">USDC/USDT</button>
+        </div>
+      </div>
+      <label class="field" data-page="stable" hidden>
+        <span>매수가</span>
+        <input class="period-input price-input" id="stable-buy" type="number" min="0" step="0.0001" value="1" aria-label="매수가">
+      </label>
+      <label class="field" data-page="stable" hidden>
+        <span>매도가</span>
+        <input class="period-input price-input" id="stable-sell" type="number" min="0" step="0.0001" value="1.001" aria-label="매도가">
+      </label>
+      <label class="field" data-page="stable" hidden>
+        <span>수수료율 %</span>
+        <input class="period-input price-input" id="stable-fee" type="number" min="0" step="0.01" value="0" aria-label="매수·매도 수수료율">
+      </label>
+      <div class="field window-field" data-page="daily stable">
         <span>구간</span>
         <div class="dual-row">
           <input class="date-input" id="start-date" type="date" aria-label="시작일">
@@ -417,7 +444,7 @@
       </p>
       <ul id="news-list" class="news-list" translate="yes"></ul>
       <article id="news-reader" class="news-reader" hidden>
-        <button type="button" id="news-back" class="news-back">목록</button>
+        <button type="button" id="news-back" class="news-back">← 뒤로 가기</button>
         <div id="article-state" class="status">기사 본문을 불러오는 중입니다.</div>
         <h2 id="article-title"></h2>
         <p id="article-source" class="article-source"></p>
@@ -457,6 +484,8 @@
               <div class="legend">
               <span><i style="background: var(--close)"></i>종가</span>
               <span id="ma-legend"><i style="background: var(--ma)"></i>이평</span>
+              <span id="buy-level" hidden><i style="background: var(--up)"></i>매수가</span>
+              <span id="sell-level" hidden><i style="background: var(--down)"></i>매도가</span>
               <span><i style="background: var(--up)"></i>매수</span>
               <span><i style="background: var(--down)"></i>매도</span>
             </div>

@@ -8,9 +8,12 @@
     symbolName: "비트코인",
     quote: "USD",
     venue: "야후 파이낸스",
-    saved: { daily: null, scalp: null },
+    saved: { daily: null, scalp: null, stable: null },
     kind: "sma",
     period: 20,
+    buyPrice: 1,
+    sellPrice: 1.001,
+    feePercent: 0,
     startIndex: 0,
     endIndex: 0,
     view: null,
@@ -27,7 +30,7 @@
   }
 
   function price(value) {
-    const digits = state.quote === "KRW" ? 0 : value >= 1000 ? 1 : value >= 1 ? 2 : 4;
+    const digits = state.mode === "stable" ? 4 : state.quote === "KRW" ? 0 : value >= 1000 ? 1 : value >= 1 ? 2 : 4;
     return value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
   }
 
@@ -87,6 +90,15 @@
         endIndex: state.endIndex,
         initial: INITIAL,
       })
+      : state.mode === "stable"
+      ? Strategy.runStable(state.bars, {
+        buyPrice: state.buyPrice,
+        sellPrice: state.sellPrice,
+        fee: state.feePercent / 100,
+        startIndex: state.startIndex,
+        endIndex: state.endIndex,
+        initial: INITIAL,
+      })
       : Strategy.runBacktest(state.bars, {
         period: state.period,
         kind: state.kind,
@@ -96,8 +108,11 @@
       });
     const last = state.bars[result.end];
     const first = state.bars[result.start];
-    const pair = state.symbolName + " " + state.symbol;
+    const pair = state.mode === "stable" ? state.symbolName : state.symbolName + " " + state.symbol;
     const clock = function (value) { return value.replace("T", " "); };
+    document.getElementById("ma-legend").hidden = state.mode === "stable";
+    document.getElementById("buy-level").hidden = state.mode !== "stable";
+    document.getElementById("sell-level").hidden = state.mode !== "stable";
     if (state.mode === "scalp") {
       document.getElementById("page-title").textContent = "비트코인 초봉 단타";
       document.getElementById("price-title").textContent =
@@ -113,6 +128,14 @@
       document.getElementById("range-note").textContent =
         state.venue + " " + pair + " 일봉 " + first.time + "부터 " + last.time +
         "까지 " + (result.end - result.start + 1) + "일. 선택한 기준으로 매매한 결과를 보여 줍니다.";
+    }
+    if (state.mode === "stable") {
+      document.getElementById("page-title").textContent = "스테이블 코인";
+      document.getElementById("price-title").textContent =
+        pair + " " + first.time + " – " + last.time;
+      document.getElementById("range-note").textContent =
+        state.venue + " " + pair + " 일봉 " + first.time + "부터 " + last.time +
+        "까지 " + (result.end - result.start + 1) + "일. 입력한 가격에 닿으면 매수하거나 매도합니다.";
     }
 
     document.getElementById("start-amount").innerHTML =
@@ -130,7 +153,14 @@
 
     const stake = cash(INITIAL);
     const particle = state.quote === "KRW" ? "을" : "를";
-    document.getElementById("rules").innerHTML = state.mode === "scalp"
+    document.getElementById("rules").innerHTML = state.mode === "stable"
+      ? (result.valid
+        ? "<li>현금일 때 그날 저가가 매수가 " + price(state.buyPrice) + " 이하면 그 가격에 전액 매수합니다.</li>" +
+          "<li>USDC를 들고 있을 때 고가가 매도가 " + price(state.sellPrice) + " 이상이면 그 가격에 전량 매도합니다.</li>" +
+          "<li>하루 안에 두 가격이 모두 닿으면, 들고 있던 물량은 먼저 팔고 비어 있으면 산 뒤 팝니다.</li>" +
+          "<li>시작은 현금 " + stake + "입니다. 매수·매도 수수료는 " + state.feePercent + "%입니다.</li>"
+        : "<li>매도가는 매수가보다 높아야 합니다.</li>")
+      : state.mode === "scalp"
       ? "<li>짧은 추세는 최근 " + result.fastPeriod + "초, 긴 추세는 최근 " + result.slowPeriod + "초 지수이동평균입니다.</li>" +
         "<li>짧은 추세가 긴 추세를 위로 돌파하면 상승으로 보고, 다음 초 시가에 " + stake + particle + " 전액 매수합니다.</li>" +
         "<li>짧은 추세가 긴 추세 아래로 내려오면 하락으로 보고, 다음 초 시가에 전량 매도합니다.</li>" +
@@ -144,7 +174,9 @@
         "<li>종가가 이평을 위로 돌파하면 다음 시가에 전액 매수합니다.</li>" +
         "<li>종가가 이평 아래로 마감하면 다음 시가에 전량 매도합니다.</li>" +
         "<li>구간 시작은 현금 " + stake + "입니다. 수수료는 매수·매도마다 0.10%입니다.</li>";
-    document.getElementById("equity-title").textContent = state.mode === "scalp"
+    document.getElementById("equity-title").textContent = state.mode === "stable"
+      ? "평가금 · 매수 " + price(state.buyPrice) + " · 매도 " + price(state.sellPrice)
+      : state.mode === "scalp"
       ? "평가금 · 단타"
       : state.kind === "hold"
       ? "평가금 · 존버"
@@ -163,7 +195,7 @@
       const name = trade.side === "buy" ? "매수" : "매도";
       const cls = trade.side === "buy" ? "up" : "down";
       return "<tr><td class=\"" + cls + "\">" + name + "</td><td>" + bar.time.replace("T", " ") +
-        "</td><td>" + price(trade.price) + "</td><td>" + money(trade.equity) + "</td></tr>";
+        "</td><td>" + price(trade.price) + "</td><td>" + (trade.equity == null ? "—" : money(trade.equity)) + "</td></tr>";
     });
     const startRow = "<tr><td>시작</td><td>" + state.bars[result.start].time.replace("T", " ") +
       "</td><td>—</td><td>" + money(INITIAL) + "</td></tr>";
@@ -219,21 +251,41 @@
   function rangeOf(bars) {
     let min = Infinity;
     let max = -Infinity;
-    bars.forEach(function (item) {
-      let low = item.bar.low;
-      let high = item.bar.high;
-      if (item.ma != null) {
-        low = Math.min(low, item.ma);
-        high = Math.max(high, item.ma);
+    if (state.mode === "stable" && bars.length) {
+      const lows = [];
+      const highs = [];
+      bars.forEach(function (item) {
+        lows.push(item.bar.low);
+        highs.push(item.bar.high);
+      });
+      lows.sort(function (a, b) { return a - b; });
+      highs.sort(function (a, b) { return a - b; });
+      const at = function (values, ratio) {
+        return values[Math.min(values.length - 1, Math.max(0, Math.round((values.length - 1) * ratio)))];
+      };
+      min = at(lows, 0.02);
+      max = at(highs, 0.98);
+      if (state.buyPrice > 0 && state.sellPrice > state.buyPrice) {
+        min = Math.min(min, state.buyPrice, state.sellPrice);
+        max = Math.max(max, state.buyPrice, state.sellPrice);
       }
-      if (item.trend != null) {
-        low = Math.min(low, item.trend);
-        high = Math.max(high, item.trend);
-      }
-      min = Math.min(min, low);
-      max = Math.max(max, high);
-    });
-    const pad = (max - min) * 0.06 || max * 0.01;
+    } else {
+      bars.forEach(function (item) {
+        let low = item.bar.low;
+        let high = item.bar.high;
+        if (item.ma != null) {
+          low = Math.min(low, item.ma);
+          high = Math.max(high, item.ma);
+        }
+        if (item.trend != null) {
+          low = Math.min(low, item.trend);
+          high = Math.max(high, item.trend);
+        }
+        min = Math.min(min, low);
+        max = Math.max(max, high);
+      });
+    }
+    const pad = (max - min) * 0.08 || Math.abs(max) * 0.01 || 0.001;
     return { min: min - pad, max: max + pad };
   }
 
@@ -267,6 +319,10 @@
     });
 
     const dense = slot < 2.5;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(pad.l, pad.t, plotW, plotH);
+    ctx.clip();
     if (dense) {
       ctx.beginPath();
       ctx.strokeStyle = "#c8cdd4";
@@ -315,6 +371,19 @@
     }
     strokeSeries(function (item) { return item.ma; }, "#e6b34d");
     strokeSeries(function (item) { return item.trend; }, "#7eb6ff");
+    if (state.mode === "stable" && result.valid) {
+      [result.buyPrice, result.sellPrice].forEach(function (level, index) {
+        const y = yAt(level);
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = index === 0 ? "#2fce85" : "#ef5b6a";
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(view.width - pad.r, y);
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
 
     ["buy", "sell"].forEach(function (side) {
       const buy = side === "buy";
@@ -341,6 +410,7 @@
       });
       ctx.fill();
     });
+    ctx.restore();
 
     ctx.fillStyle = "#9aa1a9";
     axisLabels(bars).forEach(function (label, index, labels) {
@@ -359,7 +429,8 @@
       ctx.lineTo(x, pad.t + plotH);
       ctx.stroke();
       const label = item.bar.time.replace("T", " ") + "  종가 " + price(item.bar.close) +
-        (item.trend == null ? (item.ma == null ? "" : "  이평 " + price(item.ma))
+        (state.mode === "stable" ? "  저가 " + price(item.bar.low) + "  고가 " + price(item.bar.high)
+          : item.trend == null ? (item.ma == null ? "" : "  이평 " + price(item.ma))
           : "  1분 " + price(item.ma) + "  3분 " + price(item.trend));
       ctx.fillStyle = "#181b1f";
       ctx.fillRect(pad.l + 8, 8, ctx.measureText(label).width + 12, 18);
@@ -695,7 +766,8 @@
     fill.style.width = Math.max(0, right - left) + "px";
     document.querySelectorAll("#windows button").forEach(function (button) {
       const years = Number(button.dataset.years || 0);
-      button.hidden = button.dataset.mode !== state.mode || (years > 0 && !assetCoversYears(years));
+      const presetMode = state.mode === "stable" ? "daily" : state.mode;
+      button.hidden = button.dataset.mode !== presetMode || (years > 0 && !assetCoversYears(years));
       if (button.hidden) {
         button.setAttribute("aria-pressed", "false");
         return;
@@ -1036,9 +1108,9 @@
 
   function applyPage(mode) {
     document.querySelectorAll("[data-page]").forEach(function (element) {
-      element.hidden = element.dataset.page !== mode;
+      element.hidden = element.dataset.page.split(/\s+/).indexOf(mode) === -1;
     });
-    if (mode !== "daily") {
+    if (mode === "news" || mode === "x") {
       board.hidden = true;
       status.hidden = true;
     }
@@ -1241,9 +1313,9 @@
     document.getElementById("range-note").textContent = state.newsNote + (extra ? " " + extra : "");
   }
 
-  function startBrowserTranslator() {
+  function startBrowserTranslator(forceNew) {
     if (browserTranslator.ready) return Promise.resolve(browserTranslator.ready);
-    if (browserTranslator.pending) return browserTranslator.pending;
+    if (!forceNew && browserTranslator.pending) return browserTranslator.pending;
     if (!("Translator" in window)) return Promise.resolve(null);
     let created;
     try {
@@ -1262,14 +1334,24 @@
     } catch (error) {
       return Promise.resolve(null);
     }
-    browserTranslator.pending = Promise.resolve(created).then(function (translator) {
+    const promise = Promise.resolve(created).then(function (translator) {
       browserTranslator.ready = translator;
+      if (browserTranslator.pending === promise) browserTranslator.pending = null;
       return translator;
     }).catch(function () {
-      browserTranslator.pending = null;
+      if (browserTranslator.pending === promise) browserTranslator.pending = null;
       return null;
     });
-    return browserTranslator.pending;
+    browserTranslator.pending = promise;
+    return promise;
+  }
+
+  function textSource(text) {
+    const node = {
+      textContent: text,
+      getAttribute: function () { return ""; },
+    };
+    return knownSource(node) || "en";
   }
 
   function needsKorean(items) {
@@ -1278,61 +1360,88 @@
     });
   }
 
+  function prepareNewsTranslator() {
+    if (browserTranslator.ready) return Promise.resolve(browserTranslator.ready);
+    if (browserTranslator.pending) return browserTranslator.pending;
+    if (!("Translator" in window)) return Promise.resolve(null);
+    return Promise.resolve(Translator.availability({
+      sourceLanguage: "en",
+      targetLanguage: "ko",
+    })).then(function (availability) {
+      if (availability === "available" || availability === "downloading") return startBrowserTranslator();
+      return null;
+    }).catch(function () { return null; });
+  }
+
+  function askForNewsTranslation(request) {
+    if (request !== newsToken || state.mode !== "news") return;
+    const prompt = document.getElementById("news-translate");
+    prompt.hidden = false;
+    setNewsNote("브라우저 번역을 시작하려면 아래 버튼을 눌러 주세요.");
+  }
+
   function translateCurrentNews(translatorPromise, items, request, symbol) {
     const prompt = document.getElementById("news-translate");
     prompt.hidden = true;
     if (!needsKorean(items)) return;
-    setNewsNote("브라우저 번역으로 한글로 바꾸는 중입니다.");
-    translatorPromise.then(function (translator) {
-      if (request !== newsToken || state.mode !== "news" || state.symbol !== symbol) return;
-      if (!translator) {
-        if (!("Translator" in window)) {
-          setNewsNote("이 브라우저는 내장 번역을 지원하지 않아 원문을 보여 줍니다.");
-          return;
-        }
-        prompt.hidden = false;
-        setNewsNote("브라우저 번역을 시작하려면 아래 버튼을 눌러 주세요.");
-        return;
+    const jobs = [];
+    items.forEach(function (item, index) {
+      if (item.title && !mostlyKorean(item.title)) jobs.push({ index: index, field: "strong", source: textSource(item.title), text: item.title });
+      if (item.summary && !mostlyKorean(item.summary)) jobs.push({ index: index, field: "p", source: textSource(item.summary), text: item.summary });
+    });
+    if (!jobs.length) return;
+    const sources = { en: translatorPromise };
+    jobs.forEach(function (job) {
+      if (sources[job.source]) return;
+      try {
+        sources[job.source] = openKoreanTranslator(job.source);
+      } catch (error) {
+        sources[job.source] = Promise.resolve(null);
+        if (needsClick(error)) askForNewsTranslation(request);
       }
-      const rows = document.querySelectorAll("#news-list li");
-      let chain = Promise.resolve();
-      items.forEach(function (item, index) {
-        chain = chain.then(function () {
-          if (request !== newsToken || state.symbol !== symbol) return;
-          const row = rows[index];
-          if (!row) return;
-          let step = Promise.resolve();
-          if (item.title && !mostlyKorean(item.title)) {
-            step = translator.translate(item.title).then(function (text) {
-              if (request !== newsToken || state.symbol !== symbol || !text) return;
-              row.querySelector("strong").textContent = text;
-            });
-          }
-          return step.then(function () {
-            const summary = row.querySelector("p");
-            if (!summary || !item.summary || mostlyKorean(item.summary)) return;
-            if (request !== newsToken || state.symbol !== symbol) return;
-            return translator.translate(item.summary).then(function (text) {
-              if (request !== newsToken || state.symbol !== symbol || !text) return;
-              summary.textContent = text;
-            });
+    });
+    setNewsNote("브라우저 번역으로 한글로 바꾸는 중입니다.");
+    const slow = setTimeout(function () {
+      if (!browserTranslator.ready) askForNewsTranslation(request);
+    }, 2500);
+    let changed = false;
+    let chain = Promise.resolve();
+    jobs.forEach(function (job) {
+      chain = chain.then(function () {
+        if (request !== newsToken || state.mode !== "news" || state.symbol !== symbol) return;
+        return sources[job.source].then(function (translator) {
+          if (!translator) return;
+          return translator.translate(job.text).then(function (text) {
+            if (request !== newsToken || state.symbol !== symbol || !text) return;
+            const row = document.querySelectorAll("#news-list li")[job.index];
+            const node = row && row.querySelector(job.field);
+            if (!node) return;
+            node.textContent = text;
+            changed = true;
           });
+        }).catch(function (error) {
+          if (needsClick(error)) askForNewsTranslation(request);
         });
       });
-      return chain.then(function () {
-        if (request !== newsToken || state.mode !== "news" || state.symbol !== symbol) return;
+    });
+    return chain.then(function () {
+      clearTimeout(slow);
+      if (request !== newsToken || state.mode !== "news" || state.symbol !== symbol) return;
+      if (changed) {
+        prompt.hidden = true;
         setNewsNote("브라우저 번역으로 한글로 바꿨습니다.");
-      });
+        return;
+      }
+      if (!browserTranslator.ready) askForNewsTranslation(request);
     }).catch(function () {
-      if (request !== newsToken || state.mode !== "news") return;
-      prompt.hidden = false;
-      setNewsNote("브라우저 번역을 시작하려면 아래 버튼을 눌러 주세요.");
+      clearTimeout(slow);
+      askForNewsTranslation(request);
     });
   }
 
   function loadNews(symbol) {
     const request = ++newsToken;
-    const translatorPromise = startBrowserTranslator();
+    const translatorPromise = prepareNewsTranslator();
     const newsState = document.getElementById("news-state");
     const newsList = document.getElementById("news-list");
     const selected = symbolSelect.options[symbolSelect.selectedIndex];
@@ -1385,7 +1494,8 @@
 
   function showDaily() {
     const saved = state.saved.daily;
-    if (state.chartSymbol === state.symbol && state.bars.length && state.loadedMode === "daily") {
+    const selected = symbolSelect.value;
+    if (state.loadedMode === "daily" && state.chartSymbol === selected && state.bars.length) {
       status.hidden = true;
       board.hidden = false;
       requestAnimationFrame(function () {
@@ -1393,11 +1503,11 @@
       });
       return;
     }
-    if (saved && saved.symbol === state.symbol && saved.bars.length) {
+    if (saved && saved.symbol === selected && saved.bars.length) {
       restore("daily");
       return;
     }
-    loadSymbol(state.symbol);
+    loadSymbol(selected);
   }
 
   let xToken = 0;
@@ -1534,16 +1644,101 @@
       });
   }
 
+  let stableToken = 0;
+
+  function showStable() {
+    document.getElementById("page-title").textContent = "스테이블 코인";
+    const saved = state.saved.stable;
+    if (state.loadedMode === "stable" && state.bars.length) {
+      status.hidden = true;
+      board.hidden = false;
+      requestAnimationFrame(function () {
+        setRange(state.startIndex, state.endIndex, "both", true);
+      });
+      return;
+    }
+    if (saved && saved.bars.length) {
+      restore("stable");
+      return;
+    }
+    loadStable();
+  }
+
+  function loadStable() {
+    const request = ++stableToken;
+    status.hidden = false;
+    status.className = "status";
+    status.textContent = "바이비트 USDC/USDT 일봉을 불러오는 중입니다.";
+    board.hidden = true;
+    document.getElementById("range-note").textContent = "바이비트 현물 USDC/USDT 일봉을 불러옵니다.";
+    fetch("api/stable")
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data.error) throw new Error(data.error);
+        if (!data.bars || data.bars.length < 30) throw new Error("일봉이 너무 적습니다.");
+        const snapshot = {
+          bars: data.bars,
+          symbol: data.symbol,
+          symbolName: data.name,
+          quote: data.quote || "USDT",
+          venue: data.venue || "바이비트 현물",
+          start: 0,
+          end: data.bars.length - 1,
+        };
+        if (request !== stableToken || state.mode !== "stable") {
+          state.saved.stable = snapshot;
+          return;
+        }
+        state.loadedMode = "stable";
+        state.chartSymbol = snapshot.symbol;
+        state.symbol = snapshot.symbol;
+        state.symbolName = snapshot.symbolName;
+        state.quote = snapshot.quote;
+        state.venue = snapshot.venue;
+        state.bars = snapshot.bars;
+        status.hidden = true;
+        board.hidden = false;
+        requestAnimationFrame(function () {
+          setRange(0, state.bars.length - 1, "both");
+        });
+      })
+      .catch(function (error) {
+        if (request !== stableToken || state.mode !== "stable") return;
+        status.hidden = false;
+        status.className = "status error";
+        status.textContent = "시세를 가져오지 못했습니다. " + error.message;
+      });
+  }
+
+  function readStablePrices() {
+    const buy = Number(document.getElementById("stable-buy").value);
+    const sell = Number(document.getElementById("stable-sell").value);
+    const feePercent = Number(document.getElementById("stable-fee").value);
+    if (!(buy > 0) || !(sell > 0) || !(feePercent >= 0)) return;
+    state.buyPrice = buy;
+    state.sellPrice = sell;
+    state.feePercent = feePercent;
+    if (state.mode === "stable" && state.bars.length && state.loadedMode === "stable") render();
+  }
+
+  document.getElementById("stable-buy").addEventListener("change", readStablePrices);
+  document.getElementById("stable-sell").addEventListener("change", readStablePrices);
+  document.getElementById("stable-fee").addEventListener("change", readStablePrices);
+
   function showTab(mode) {
     if (mode === state.mode) return;
-    if (state.mode === "daily" && state.bars.length && state.loadedMode === "daily") remember("daily");
+    if ((state.mode === "daily" || state.mode === "stable") && state.bars.length && state.loadedMode === state.mode) {
+      remember(state.mode);
+    }
     state.mode = mode;
     document.querySelectorAll("#tabs button").forEach(function (button) {
       button.setAttribute("aria-pressed", button.dataset.tab === mode ? "true" : "false");
     });
     applyPage(mode);
+    if (mode === "news" || mode === "x") state.symbol = symbolSelect.value;
     if (mode === "news") loadNews(state.symbol);
     else if (mode === "x") loadX(state.symbol);
+    else if (mode === "stable") showStable();
     else showDaily();
   }
 
@@ -1569,7 +1764,13 @@
     });
     if (!pending.length) return;
     setNewsNote("브라우저 번역으로 한글로 바꾸는 중입니다.");
+    const slow = setTimeout(function () {
+      if (request !== articleToken || browserTranslator.ready) return;
+      prompt.hidden = false;
+      setNewsNote("브라우저 번역을 시작하려면 아래 버튼을 눌러 주세요.");
+    }, 2500);
     translatorPromise.then(function (translator) {
+      clearTimeout(slow);
       if (request !== articleToken || state.mode !== "news") return;
       if (!translator) {
         prompt.hidden = false;
@@ -1587,10 +1788,12 @@
         });
       });
       return chain.then(function () {
+        clearTimeout(slow);
         if (request !== articleToken || state.mode !== "news") return;
         setNewsNote(doneNote);
       });
     }).catch(function () {
+      clearTimeout(slow);
       if (request !== articleToken || state.mode !== "news") return;
       prompt.hidden = false;
       setNewsNote("브라우저 번역을 시작하려면 아래 버튼을 눌러 주세요.");
@@ -1599,7 +1802,7 @@
 
   function openArticle(url, fallbackTitle) {
     const request = ++articleToken;
-    const translatorPromise = startBrowserTranslator();
+    const translatorPromise = prepareNewsTranslator();
     const reader = document.getElementById("news-reader");
     const articleState = document.getElementById("article-state");
     const titleNode = document.getElementById("article-title");
@@ -1608,6 +1811,7 @@
     document.getElementById("news-list").hidden = true;
     document.getElementById("news-translate").hidden = true;
     reader.hidden = false;
+    document.getElementById("news-back").scrollIntoView({ block: "nearest" });
     titleNode.textContent = fallbackTitle || "기사";
     sourceNode.textContent = "";
     textNode.innerHTML = "";
@@ -1657,12 +1861,13 @@
   document.getElementById("news-back").addEventListener("click", closeArticle);
 
   document.getElementById("news-translate-button").addEventListener("click", function () {
+    const translatorPromise = startBrowserTranslator(true);
     const reader = document.getElementById("news-reader");
     if (!reader.hidden) {
       const titleNode = document.getElementById("article-title");
       const paragraphs = document.querySelectorAll("#article-text p");
       translateNodes(
-        startBrowserTranslator(),
+        translatorPromise,
         [titleNode].concat(Array.prototype.slice.call(paragraphs)),
         articleToken,
         "브라우저 번역으로 본문을 한글로 바꿨습니다."
@@ -1670,7 +1875,7 @@
       return;
     }
     if (!state.newsItems.length) return;
-    translateCurrentNews(startBrowserTranslator(), state.newsItems, newsToken, state.symbol);
+    translateCurrentNews(translatorPromise, state.newsItems, newsToken, state.symbol);
   });
 
   symbolSelect.addEventListener("change", function () {

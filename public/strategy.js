@@ -241,5 +241,91 @@
     };
   }
 
-  return { movingAverage: movingAverage, runBacktest: runBacktest, runScalp: runScalp };
+  function runStable(bars, options) {
+    const buyPrice = Number(options.buyPrice);
+    const sellPrice = Number(options.sellPrice);
+    const fee = options.fee == null ? 0 : options.fee;
+    const initial = options.initial == null ? 10000 : options.initial;
+    const start = options.startIndex == null
+      ? 0
+      : Math.max(0, Math.min(options.startIndex, bars.length - 1));
+    const end = options.endIndex == null
+      ? bars.length - 1
+      : Math.max(start, Math.min(options.endIndex, bars.length - 1));
+    const valid = buyPrice > 0 && sellPrice > buyPrice;
+    let cash = initial;
+    let coin = 0;
+    const points = [];
+    const trades = [];
+    let peak = initial;
+    let maxDd = 0;
+
+    for (let i = start; i <= end; i++) {
+      const candle = bars[i];
+      let fills = 0;
+      if (valid && coin > 0 && candle.high >= sellPrice && fills < 2) {
+        cash = coin * sellPrice * (1 - fee);
+        coin = 0;
+        trades.push({
+          side: "sell",
+          signalIndex: i,
+          fillIndex: i,
+          price: sellPrice,
+          equity: cash,
+        });
+        fills += 1;
+      }
+      if (valid && coin === 0 && cash > 0 && candle.low <= buyPrice && fills < 2) {
+        coin = (cash * (1 - fee)) / buyPrice;
+        cash = 0;
+        trades.push({
+          side: "buy",
+          signalIndex: i,
+          fillIndex: i,
+          price: buyPrice,
+          equity: coin * buyPrice,
+        });
+        fills += 1;
+      }
+      if (valid && coin > 0 && candle.high >= sellPrice && fills < 2) {
+        cash = coin * sellPrice * (1 - fee);
+        coin = 0;
+        trades.push({
+          side: "sell",
+          signalIndex: i,
+          fillIndex: i,
+          price: sellPrice,
+          equity: cash,
+        });
+      }
+      const equity = cash + coin * candle.close;
+      const last = trades[trades.length - 1];
+      if (last && last.side === "buy" && last.fillIndex === i && coin > 0) last.equity = equity;
+      points.push({ index: i, equity: equity });
+      peak = Math.max(peak, equity);
+      maxDd = Math.max(maxDd, peak > 0 ? (peak - equity) / peak : 0);
+    }
+
+    const endEquity = points.length ? points[points.length - 1].equity : initial;
+    return {
+      ma: null,
+      kind: "stable",
+      buyPrice: buyPrice,
+      sellPrice: sellPrice,
+      valid: valid,
+      period: 0,
+      start: start,
+      end: end,
+      points: points,
+      trades: trades,
+      maxDd: maxDd,
+      initial: initial,
+      endEquity: endEquity,
+      pnl: endEquity / initial - 1,
+      holding: coin > 0,
+      fee: fee,
+    };
+  }
+
+  return { movingAverage: movingAverage, runBacktest: runBacktest, runScalp: runScalp, runStable: runStable };
 });

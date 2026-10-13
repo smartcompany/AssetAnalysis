@@ -42,6 +42,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/scalp":
             self.serve_scalp()
             return
+        if path == "/api/stable":
+            self.serve_stable()
+            return
         if path in ("/", "/index.html"):
             self.serve_file("index.html", "text/html; charset=utf-8")
             return
@@ -181,6 +184,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Location", location)
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def serve_stable(self):
+        try:
+            body = json.dumps(market.fetch_stable()).encode()
+        except Exception as exc:
+            body = json.dumps({"error": str(exc)}).encode()
+            self.respond(502, "application/json; charset=utf-8", body)
+            return
+        self.respond(200, "application/json; charset=utf-8", body)
 
     def serve_scalp(self):
         try:

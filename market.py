@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 DAY_MS = 86_400_000
 SCALP_SECONDS = 24 * 60 * 60
 SCALP_CACHE = {"at": 0, "payload": None}
+STABLE_CACHE = {"at": 0, "payload": None}
 INSTRUMENTS = {
     "BTC-USD": {"name": "비트코인", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
     "ETH-USD": {"name": "이더리움", "source": "crypto", "quote": "USD", "venue": "야후 파이낸스"},
@@ -431,6 +432,53 @@ def bar(ts, open_, high, low, close, clock="utc-date"):
         "low": float(low),
         "close": float(close),
     }
+
+
+def fetch_stable():
+    now = time.time()
+    cached = STABLE_CACHE["payload"]
+    if cached is not None and now - STABLE_CACHE["at"] < 300:
+        return cached
+    bars = fetch_bybit_daily("USDCUSDT", now)
+    result = {
+        "symbol": "USDCUSDT",
+        "name": "USDC/USDT",
+        "quote": "USDT",
+        "venue": "바이비트 현물",
+        "market": "spot",
+        "interval": "D",
+        "bars": bars,
+    }
+    STABLE_CACHE["at"] = now
+    STABLE_CACHE["payload"] = result
+    return result
+
+
+def fetch_bybit_daily(symbol, now):
+    by_ts = {}
+    end = None
+    for _ in range(10):
+        query = {"category": "spot", "symbol": symbol, "interval": "D", "limit": "1000"}
+        if end is not None:
+            query["end"] = str(end)
+        url = "https://api.bybit.com/v5/market/kline?" + urlencode(query)
+        payload = get_json(url, "Mozilla/5.0")
+        if payload.get("retCode") != 0:
+            raise RuntimeError(payload.get("retMsg") or "바이비트 시세를 가져오지 못했습니다.")
+        rows = (payload.get("result") or {}).get("list") or []
+        if not rows:
+            break
+        for row in rows:
+            ts = int(row[0])
+            if not session_closed(ts / 1000, now, None):
+                continue
+            by_ts[ts] = bar(ts, row[1], row[2], row[3], row[4])
+        if len(rows) < 1000:
+            break
+        end = int(rows[-1][0]) - 1
+    if not by_ts:
+        raise RuntimeError("바이비트 일봉이 없습니다.")
+    return [by_ts[ts] for ts in sorted(by_ts)]
 
 
 def fetch_scalp(now=None):
