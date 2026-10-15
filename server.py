@@ -104,26 +104,7 @@ class Handler(BaseHTTPRequestHandler):
             xfeed.logout()
             self.respond(200, "application/json; charset=utf-8", b'{"ok":true}')
             return
-        if path == "/api/x/config":
-            self.serve_x_config()
-            return
         self.send_error(404)
-
-    def serve_x_config(self):
-        length = int(self.headers.get("Content-Length") or "0")
-        if length <= 0 or length > 8000:
-            body = json.dumps({"error": "Client ID와 Client Secret을 모두 입력해 주세요."}).encode()
-            self.respond(400, "application/json; charset=utf-8", body)
-            return
-        try:
-            data = json.loads(self.rfile.read(length).decode())
-            xfeed.save_credentials(data.get("clientId"), data.get("clientSecret"))
-        except (json.JSONDecodeError, xfeed.ConfigError) as exc:
-            message = str(exc) if isinstance(exc, xfeed.ConfigError) else "입력 형식이 잘못되었습니다."
-            body = json.dumps({"error": message}).encode()
-            self.respond(400, "application/json; charset=utf-8", body)
-            return
-        self.respond(200, "application/json; charset=utf-8", b'{"ok":true}')
 
     def serve_x_status(self):
         body = json.dumps(xfeed.status()).encode()
@@ -135,9 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         except xfeed.ConfigError:
             page = (
                 "<!DOCTYPE html><meta charset=\"utf-8\"><title>X 로그인</title>"
-                "<p>X 로그인을 쓰려면 프로젝트 폴더에 x-client.json 파일을 만들고 서버를 다시 시작하세요.</p>"
-                "<p>clientId와 clientSecret을 넣고, X 앱의 콜백 주소는 "
-                "http://127.0.0.1:8787/api/x/callback 입니다.</p>"
+                "<p>X 로그인 설정이 없습니다. 서버 환경 변수에 Client ID와 Client Secret이 있어야 합니다.</p>"
                 "<p><a href=\"/#x\">돌아가기</a></p>"
             ).encode()
             self.respond(200, "text/html; charset=utf-8", page)

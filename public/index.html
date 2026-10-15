@@ -169,15 +169,26 @@
     }
     .dual input[type="range"]::-webkit-slider-thumb {
       appearance: none;
-      pointer-events: auto;
+      pointer-events: none;
+      opacity: 0;
       width: 16px;
       height: 16px;
       margin-top: -6px;
+    }
+    .dual-thumb {
+      position: absolute;
+      top: 6px;
+      width: 16px;
+      height: 16px;
+      margin-left: -8px;
       border-radius: 50%;
       background: var(--ma);
       border: 2px solid var(--bg);
+      z-index: 4;
       cursor: grab;
+      touch-action: none;
     }
+    .dual-thumb.dragging { cursor: grabbing; }
     .date-input {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -291,15 +302,7 @@
       padding: 16px;
     }
     .x-login p { margin: 0 0 12px; color: var(--muted); }
-    .x-login a { color: var(--ma); }
-    .x-form { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
-    .x-form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
-    .x-form input {
-      background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 8px 10px;
-    }
+    a.x-login-button { border-color: var(--ma); color: var(--ma); }
     .x-login-button, .x-account button {
       display: inline-block;
       background: transparent;
@@ -336,7 +339,6 @@
   <main class="app" translate="no">
     <nav class="tabs" id="tabs">
       <button type="button" data-tab="daily" aria-pressed="true">일봉</button>
-      <button type="button" data-tab="stable" aria-pressed="false">스테이블 코인</button>
       <button type="button" data-tab="news" aria-pressed="false">뉴스</button>
       <button type="button" data-tab="x" aria-pressed="false">X</button>
     </nav>
@@ -436,25 +438,7 @@
         <span>직접 입력</span>
         <input class="period-input" id="custom-period" type="number" min="2" max="200" step="1" value="20" aria-label="이평 기간">
       </label>
-      <div class="field" data-page="stable" hidden>
-        <span>종목</span>
-        <div class="choices">
-          <button type="button" aria-pressed="true">USDC/USDT</button>
-        </div>
-      </div>
-      <label class="field" data-page="stable" hidden>
-        <span>매수가</span>
-        <input class="period-input price-input" id="stable-buy" type="number" min="0" step="0.0001" value="1" aria-label="매수가">
-      </label>
-      <label class="field" data-page="stable" hidden>
-        <span>매도가</span>
-        <input class="period-input price-input" id="stable-sell" type="number" min="0" step="0.0001" value="1.001" aria-label="매도가">
-      </label>
-      <label class="field" data-page="stable" hidden>
-        <span>수수료율 %</span>
-        <input class="period-input price-input" id="stable-fee" type="number" min="0" step="0.01" value="0" aria-label="매수·매도 수수료율">
-      </label>
-      <div class="field window-field" data-page="daily stable">
+      <div class="field window-field" data-page="daily">
         <span>구간</span>
         <div class="dual-row">
           <input class="date-input" id="start-date" type="date" aria-label="시작일">
@@ -467,8 +451,10 @@
           <div class="dual" id="dual-range">
             <div class="dual-track"></div>
             <div class="dual-fill" id="dual-fill" aria-label="구간 이동"></div>
-            <input id="start-range" type="range" min="0" max="0" value="0" aria-label="시작">
-            <input id="end-range" type="range" min="0" max="0" value="0" aria-label="끝">
+            <div class="dual-thumb" id="start-thumb" aria-hidden="true"></div>
+            <div class="dual-thumb" id="end-thumb" aria-hidden="true"></div>
+            <input id="start-range" type="range" min="0" max="0" value="0" step="1" aria-label="시작">
+            <input id="end-range" type="range" min="0" max="0" value="0" step="1" aria-label="끝">
           </div>
           </div>
           <input class="date-input" id="end-date" type="date" aria-label="종료일">
@@ -510,14 +496,9 @@
     </section>
     <section id="x-feed" data-page="x" hidden>
       <div id="x-login" class="x-login">
-        <p id="x-login-copy">X 개발자 앱의 Client ID와 Client Secret을 저장하면 이어서 X 로그인이 열립니다. 콜백 주소는 http://127.0.0.1:8787/api/x/callback 입니다. <a href="https://console.x.com" target="_blank" rel="noopener noreferrer">Client ID와 Secret 발급 페이지</a></p>
-        <form id="x-config" class="x-form">
-          <label>Client ID<input id="x-client-id" name="clientId" autocomplete="off" required></label>
-          <label>Client Secret<input id="x-client-secret" name="clientSecret" type="password" autocomplete="off" required></label>
-          <button type="submit" class="x-login-button">저장하고 X로 로그인</button>
-        </form>
+        <p id="x-login-copy">gunnylove1 계정으로 로그인해야 최근 글을 가져올 수 있습니다.</p>
         <p id="x-setup" hidden></p>
-        <a id="x-login-button" class="x-login-button" href="/api/x/login" hidden>X로 로그인</a>
+        <a id="x-login-button" class="x-login-button" href="/api/x/login">X로 로그인</a>
       </div>
       <div id="x-session" hidden>
         <p class="x-account"><span id="x-account"></span><button type="button" id="x-logout">로그아웃</button></p>

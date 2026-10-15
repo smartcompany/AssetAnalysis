@@ -757,7 +757,7 @@
       date.value = bar.time;
       range.min = "0";
       range.max = String(last);
-      range.value = String(index);
+      writeRange(range, index);
     });
     const dual = document.getElementById("dual-range");
     const fill = document.getElementById("dual-fill");
@@ -766,6 +766,8 @@
     const right = 8 + (end / last) * span;
     fill.style.left = left + "px";
     fill.style.width = Math.max(0, right - left) + "px";
+    document.getElementById("start-thumb").style.left = left + "px";
+    document.getElementById("end-thumb").style.left = right + "px";
     document.querySelectorAll("#windows button").forEach(function (button) {
       const years = Number(button.dataset.years || 0);
       const presetMode = state.mode === "stable" ? "daily" : state.mode;
@@ -871,12 +873,51 @@
     setRange(start, end, "both", true);
   });
   function stopRangeShift(event) {
-    if (!rangeShift || event.pointerId !== rangeShift.pointerId) return;
+    if (!rangeShift || (event && event.pointerId !== rangeShift.pointerId)) return;
     rangeShift = null;
     rangeFill.classList.remove("dragging");
   }
   rangeFill.addEventListener("pointerup", stopRangeShift);
   rangeFill.addEventListener("pointercancel", stopRangeShift);
+  rangeFill.addEventListener("lostpointercapture", function () { stopRangeShift(); });
+
+  let writingRange = false;
+
+  function writeRange(input, value) {
+    const text = String(value);
+    if (input.value === text) return;
+    writingRange = true;
+    input.value = text;
+    writingRange = false;
+  }
+
+  function bindThumb(id, edge) {
+    const thumb = document.getElementById(id);
+    let drag = null;
+    thumb.addEventListener("pointerdown", function (event) {
+      if (!state.bars.length || event.button !== 0) return;
+      drag = { pointerId: event.pointerId };
+      thumb.setPointerCapture(event.pointerId);
+      thumb.classList.add("dragging");
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    thumb.addEventListener("pointermove", function (event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const index = Math.round(indexAtPointer(event.clientX));
+      if (edge === "start") setRange(index, state.endIndex, "start");
+      else setRange(state.startIndex, index, "end");
+    });
+    function stopThumb(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      drag = null;
+      thumb.classList.remove("dragging");
+    }
+    thumb.addEventListener("pointerup", stopThumb);
+    thumb.addEventListener("pointercancel", stopThumb);
+  }
+  bindThumb("start-thumb", "start");
+  bindThumb("end-thumb", "end");
 
   function indexAtOrAfterTs(ts) {
     const found = state.bars.findIndex(function (bar) { return bar.ts >= ts; });
@@ -980,11 +1021,22 @@
     this.style.zIndex = "3";
     document.getElementById("start-range").style.zIndex = "2";
   });
+  function onRangeInput(edge, event) {
+    if (writingRange) return;
+    const value = Number(event.target.value);
+    const current = edge === "start" ? state.startIndex : state.endIndex;
+    if (Math.abs(value - current) > 1) {
+      writeRange(event.target, current);
+      return;
+    }
+    if (edge === "start") setRange(value, state.endIndex, "start");
+    else setRange(state.startIndex, value, "end");
+  }
   document.getElementById("start-range").addEventListener("input", function (event) {
-    setRange(Number(event.target.value), state.endIndex, "start");
+    onRangeInput("start", event);
   });
   document.getElementById("end-range").addEventListener("input", function (event) {
-    setRange(state.startIndex, Number(event.target.value), "end");
+    onRangeInput("end", event);
   });
   document.getElementById("start-date").addEventListener("change", function (event) {
     setRange(indexNear(event.target.value), state.endIndex, "start");
@@ -995,6 +1047,8 @@
   document.getElementById("windows").addEventListener("click", function (event) {
     const button = event.target.closest("button");
     if (!button || button.hidden) return;
+    rangeShift = null;
+    rangeFill.classList.remove("dragging");
     const last = state.bars.length - 1;
     if (button.dataset.years) {
       const end = state.endIndex;
@@ -1324,7 +1378,7 @@
     document.querySelectorAll("[data-page]").forEach(function (element) {
       element.hidden = element.dataset.page.split(/\s+/).indexOf(mode) === -1;
     });
-    document.querySelector(".controls").classList.toggle("framed", mode === "daily" || mode === "stable");
+    document.querySelector(".controls").classList.toggle("framed", mode === "daily");
     if (mode === "news" || mode === "x") {
       board.hidden = true;
       status.hidden = true;
@@ -1791,17 +1845,9 @@
       .then(function (response) { return response.json(); })
       .then(function (data) {
         if (request !== xToken || state.mode !== "x") return;
-        if (!data.configured) {
-          showXLogin("", false);
-          xState.hidden = true;
-          state.newsNote = "Client ID와 Client Secret을 저장하면 X 로그인이 시작됩니다.";
-          setNewsNote("");
-          return;
-        }
         if (!data.loggedIn) {
           const known = { access_denied: "X 로그인을 취소했습니다.", login_failed: "X 로그인에 실패했습니다." };
           const message = known[loginError] || loginError || "";
-          document.getElementById("x-config").hidden = true;
           document.getElementById("x-login-copy").textContent = (data.allowedUser || "gunnylove1") + " 계정으로 로그인해야 최근 글을 가져올 수 있습니다.";
           showXLogin(message, true);
           xState.hidden = true;
@@ -1851,11 +1897,13 @@
             translateXPosts(request);
           });
       })
-      .catch(function (error) {
+      .catch(function () {
         if (request !== xToken || state.mode !== "x") return;
-        xState.hidden = false;
-        xState.className = "status error";
-        xState.textContent = "X 글을 가져오지 못했습니다. " + error.message;
+        document.getElementById("x-login-copy").textContent = "gunnylove1 계정으로 로그인해야 최근 글을 가져올 수 있습니다.";
+        showXLogin("", true);
+        xState.hidden = true;
+        state.newsNote = "X에 로그인하면 이 종목의 최근 글을 가져옵니다.";
+        setNewsNote("");
       });
   }
 
@@ -1936,10 +1984,6 @@
     if (state.mode === "stable" && state.bars.length && state.loadedMode === "stable") render();
   }
 
-  document.getElementById("stable-buy").addEventListener("change", readStablePrices);
-  document.getElementById("stable-sell").addEventListener("change", readStablePrices);
-  document.getElementById("stable-fee").addEventListener("change", readStablePrices);
-
   function showTab(mode) {
     if (mode === state.mode) return;
     if ((state.mode === "daily" || state.mode === "stable") && state.bars.length && state.loadedMode === state.mode) {
@@ -1953,7 +1997,6 @@
     if (mode === "news" || mode === "x") state.symbol = symbolSelect.value;
     if (mode === "news") loadNews(state.symbol);
     else if (mode === "x") loadX(state.symbol);
-    else if (mode === "stable") showStable();
     else showDaily();
   }
 
@@ -2106,30 +2149,6 @@
       return;
     }
     loadSymbol(symbolSelect.value);
-  });
-
-  document.getElementById("x-config").addEventListener("submit", function (event) {
-    event.preventDefault();
-    const setup = document.getElementById("x-setup");
-    const clientId = document.getElementById("x-client-id").value.trim();
-    const clientSecret = document.getElementById("x-client-secret").value.trim();
-    setup.hidden = false;
-    setup.textContent = "앱 정보를 저장하는 중입니다.";
-    fetch("api/x/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId: clientId, clientSecret: clientSecret }),
-    })
-      .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
-      .then(function (result) {
-        if (!result.ok) throw new Error(result.data.error || "저장하지 못했습니다.");
-        document.getElementById("x-client-secret").value = "";
-        location.href = "api/x/login";
-      })
-      .catch(function (error) {
-        setup.hidden = false;
-        setup.textContent = error.message;
-      });
   });
 
   document.getElementById("x-logout").addEventListener("click", function () {
