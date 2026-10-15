@@ -126,39 +126,61 @@ def status():
     }
 
 
-def authorization_url():
+def callback_uri(host, proto):
+    host = (host or "").split(",")[0].strip()
+    if host.startswith("127.0.0.1") or host.startswith("localhost"):
+        return "http://127.0.0.1:8787/api/x/callback"
+    scheme = "http" if (proto or "").split(",")[0].strip() == "http" else "https"
+    return scheme + "://" + host + "/api/x/callback"
+
+
+def oauth_start(redirect_uri):
     client_id, _secret = credentials()
     if not client_id:
         raise ConfigError("X 로그인 설정이 없습니다.")
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     state = secrets.token_urlsafe(24)
-    with LOCK:
-        PENDING[state] = {"verifier": verifier, "at": time.time()}
-        for key, item in list(PENDING.items()):
-            if time.time() - item["at"] > 600:
-                PENDING.pop(key, None)
+    pending = {"state": state, "verifier": verifier, "at": time.time()}
     query = urlencode({
         "response_type": "code",
         "client_id": client_id,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "scope": SCOPES,
         "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     })
-    return AUTH_URL + "?" + query
+    return AUTH_URL + "?" + query, pending
 
 
-def exchange(code, state):
+def authorization_url():
+    url, pending = oauth_start(REDIRECT_URI)
     with LOCK:
-        pending = PENDING.pop(state, None)
-    if pending is None or time.time() - pending["at"] > 600:
+        PENDING[pending["state"]] = pending
+        for key, item in list(PENDING.items()):
+            if time.time() - item["at"] > 600:
+                PENDING.pop(key, None)
+    return url
+
+
+def session_from_token(token, username, name, refresh_fallback=""):
+    return {
+        "access_token": token["access_token"],
+        "refresh_token": token.get("refresh_token") or refresh_fallback,
+        "expires_at": time.time() + int(token.get("expires_in") or 7200),
+        "username": username,
+        "name": name,
+    }
+
+
+def oauth_finish(code, state, pending, redirect_uri):
+    if not code or not pending or pending.get("state") != state or time.time() - float(pending.get("at") or 0) > 600:
         raise AuthError("로그인이 만료되었습니다. 다시 로그인해 주세요.")
     token = token_request({
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "code_verifier": pending["verifier"],
     })
     profile = api_json(ME_URL + "?user.fields=name,username", token["access_token"])
@@ -166,7 +188,13 @@ def exchange(code, state):
     username = user.get("username") or ""
     if not allowed_user(username):
         raise AuthError(ALLOWED_USERNAME + " 계정만 사용할 수 있습니다.")
-    save_token(token, username, user.get("name") or "")
+    return session_from_token(token, username, user.get("name") or "")
+
+
+def exchange(code, state):
+    with LOCK:
+        pending = PENDING.pop(state, None)
+    save_session(oauth_finish(code, state, pending, REDIRECT_URI))
 
 
 def logout():
@@ -179,6 +207,15 @@ def logout():
 
 
 def fetch_posts(symbol):
+    return posts_with_token(symbol, valid_access_token())
+
+
+def fetch_posts_for(symbol, session):
+    token, session, changed = ensure_token(session)
+    return posts_with_token(symbol, token), (session if changed else None)
+
+
+def posts_with_token(symbol, token):
     spec = market.INSTRUMENTS.get(symbol)
     if spec is None:
         raise ValueError("지원하지 않는 종목입니다.")
@@ -186,7 +223,6 @@ def fetch_posts(symbol):
     cached = POST_CACHE.get(symbol)
     if cached is not None and now - cached["at"] < 600:
         return cached["payload"]
-    token = valid_access_token()
     query = search_query(symbol, spec["name"])
     params = urlencode({
         "query": query,
@@ -248,28 +284,39 @@ def search_query(symbol, name):
     return "(" + inner + ") -is:retweet"
 
 
-def valid_access_token():
-    session = read_session()
-    if session is None:
+def ensure_token(session):
+    if session is None or not session.get("access_token"):
         raise AuthError("X에 로그인해야 글을 가져올 수 있습니다.")
     if not allowed_user(session.get("username") or ""):
-        logout()
         raise AuthError(ALLOWED_USERNAME + " 계정만 사용할 수 있습니다.")
     if session.get("expires_at", 0) > time.time() + 60:
-        return session["access_token"]
+        return session["access_token"], session, False
     if not session.get("refresh_token"):
-        logout()
         raise AuthError("X 로그인이 만료되었습니다. 다시 로그인해 주세요.")
+    token = token_request({
+        "grant_type": "refresh_token",
+        "refresh_token": session["refresh_token"],
+    })
+    updated = session_from_token(
+        token,
+        session.get("username") or "",
+        session.get("name") or "",
+        session.get("refresh_token") or "",
+    )
+    return updated["access_token"], updated, True
+
+
+def valid_access_token():
+    session = read_session()
     try:
-        token = token_request({
-            "grant_type": "refresh_token",
-            "refresh_token": session["refresh_token"],
-        })
+        token, updated, changed = ensure_token(session)
     except AuthError:
-        logout()
+        if session is not None:
+            logout()
         raise
-    save_token(token, session.get("username") or "", session.get("name") or "")
-    return token["access_token"]
+    if changed:
+        save_session(updated)
+    return token
 
 
 def token_request(fields):
@@ -323,19 +370,114 @@ def error_message(exc):
 
 
 def save_token(token, username, name):
-    session = {
-        "access_token": token["access_token"],
-        "refresh_token": token.get("refresh_token") or "",
-        "expires_at": time.time() + int(token.get("expires_in") or 7200),
-        "username": username,
-        "name": name,
-    }
+    save_session(session_from_token(token, username, name))
+
+
+def save_session(session):
     with LOCK:
         SESSION_PATH.write_text(json.dumps(session))
         try:
             os.chmod(SESSION_PATH, 0o600)
         except OSError:
             pass
+
+
+def describe(session):
+    if session is not None and not allowed_user(session.get("username") or ""):
+        session = None
+    if session is None:
+        return {"configured": configured(), "loggedIn": False, "username": "", "name": "", "allowedUser": ALLOWED_USERNAME}
+    return {
+        "configured": configured(),
+        "loggedIn": True,
+        "username": session.get("username") or "",
+        "name": session.get("name") or "",
+        "allowedUser": ALLOWED_USERNAME,
+    }
+
+
+def pack_cookie(data):
+    raw = json.dumps(data, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def unpack_cookie(value):
+    if not value:
+        return None
+    try:
+        padded = value + ("=" * (-len(value) % 4))
+        data = json.loads(base64.urlsafe_b64decode(padded.encode()))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def cookie_header(name, data, max_age, secure):
+    pieces = [
+        name + "=" + pack_cookie(data),
+        "HttpOnly",
+        "Path=/",
+        "Max-Age=" + str(max_age),
+        "SameSite=Lax",
+    ]
+    if secure:
+        pieces.append("Secure")
+    return "; ".join(pieces)
+
+
+def clear_cookie(name, secure):
+    pieces = [name + "=", "HttpOnly", "Path=/", "Max-Age=0", "SameSite=Lax"]
+    if secure:
+        pieces.append("Secure")
+    return "; ".join(pieces)
+
+
+def request_cookies(header):
+    jar = {}
+    for part in (header or "").split(";"):
+        if "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        jar[name.strip()] = value.strip()
+    return jar
+
+
+def request_target(headers):
+    proto = (headers.get("x-forwarded-proto") or "https").split(",")[0].strip()
+    host = (headers.get("x-forwarded-host") or headers.get("Host") or "").split(",")[0].strip()
+    return host, proto
+
+
+def send_json(handler, status, payload, cookies=None):
+    body = json.dumps(payload).encode()
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-store")
+    for cookie in cookies or []:
+        handler.send_header("Set-Cookie", cookie)
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def send_redirect(handler, location, cookies=None):
+    handler.send_response(302)
+    handler.send_header("Location", location)
+    handler.send_header("Content-Length", "0")
+    handler.send_header("Cache-Control", "no-store")
+    for cookie in cookies or []:
+        handler.send_header("Set-Cookie", cookie)
+    handler.end_headers()
+
+
+def send_html(handler, status, html):
+    body = html.encode()
+    handler.send_response(status)
+    handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(body)
 
 
 def read_session():
