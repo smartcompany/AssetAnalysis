@@ -38,6 +38,17 @@
       align-items: end;
       margin: 16px 0;
     }
+    .controls.framed {
+      padding: 14px 16px 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .favorite-add-row {
+      flex: 1 1 100%;
+      display: flex;
+      justify-content: flex-end;
+    }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field span, .panel h2 { color: var(--muted); font-size: 12px; font-weight: 600; }
     .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
@@ -65,6 +76,43 @@
       border-color: var(--text);
     }
     .window-field { flex: 1 1 100%; gap: 8px; }
+    .favorites { margin: 0 0 16px; }
+    .favorites-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .favorites-head span { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .favorite-add, .favorite-open, .favorite-remove {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .favorite-add, .favorite-open { padding: 6px 12px; }
+    .favorite-add { border-color: var(--ma); color: var(--ma); }
+    .favorite-open[aria-pressed="true"] { background: var(--text); color: #141618; border-color: var(--text); }
+    .favorite-list { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; }
+    .favorite-list li { display: flex; align-items: center; gap: 4px; touch-action: none; }
+    .favorite-list li:not(.favorite-empty) .favorite-open { cursor: grab; }
+    .favorite-list li.dragging { pointer-events: none; }
+    .favorite-list li.dragging .favorite-open,
+    .favorite-list li.dragging .favorite-remove {
+      color: transparent;
+      background: transparent;
+      border-style: dashed;
+      border-color: var(--ma);
+    }
+    .favorite-ghost {
+      position: fixed;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 0;
+      pointer-events: none;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+      transform: scale(1.04);
+      cursor: grabbing;
+    }
+    .favorite-remove { padding: 6px 10px; color: var(--muted); }
+    .favorite-empty { margin: 0; color: var(--muted); font-size: 13px; }
     .dual-row { display: flex; align-items: center; gap: 10px; }
     .dual-col { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 4px; }
     .shift-row { display: flex; justify-content: center; gap: 8px; }
@@ -296,7 +344,7 @@
       <h1 id="page-title">현물 이평선 매매</h1>
       <p class="sub" id="range-note">야후 파이낸스 일봉을 있는 기간만큼 불러옵니다.</p>
     </header>
-    <section class="controls">
+    <section class="controls framed">
       <div class="field" data-page="daily news x">
         <span>종목</span>
         <select id="symbols" class="symbol-select" aria-label="종목">
@@ -435,6 +483,15 @@
           <button type="button" data-mode="daily" data-days="all" aria-pressed="true">전체</button>
         </div>
       </div>
+      <div class="favorite-add-row" data-page="daily">
+        <button type="button" id="favorite-add" class="favorite-add">즐겨찾기 추가</button>
+      </div>
+    </section>
+    <section id="favorites" class="favorites" data-page="daily">
+      <div class="favorites-head">
+        <span>즐겨찾기</span>
+      </div>
+      <ul id="favorite-list" class="favorite-list"></ul>
     </section>
     <div id="state" class="status">시세를 불러오는 중입니다.</div>
     <section id="news" data-page="news" hidden>

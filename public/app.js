@@ -706,6 +706,7 @@
     });
     document.getElementById("custom-period").disabled = hold;
     render();
+    renderFavorites();
   }
 
   function selectPeriod(period) {
@@ -716,6 +717,7 @@
       button.setAttribute("aria-pressed", Number(button.dataset.period) === next ? "true" : "false");
     });
     render();
+    renderFavorites();
   }
 
   document.getElementById("kinds").addEventListener("click", function (event) {
@@ -785,6 +787,7 @@
       button.setAttribute("aria-pressed", matches ? "true" : "false");
     });
     render();
+    renderFavorites();
   }
 
   function assetCoversYears(years) {
@@ -1035,15 +1038,21 @@
 
   const symbolSelect = document.getElementById("symbols");
 
-  function loadSymbol(symbol) {
+  let symbolToken = 0;
+
+  function loadSymbol(symbol, favorite) {
+    const request = ++symbolToken;
     symbolSelect.value = symbol;
     symbolSelect.disabled = true;
     fetch("api/klines?symbol=" + encodeURIComponent(symbol))
       .then(function (response) { return response.json(); })
       .then(function (data) {
+        if (request !== symbolToken) return;
         if (data.error) throw new Error(data.error);
         if (!data.bars || data.bars.length < 30) throw new Error("일봉이 너무 적습니다.");
-        const previous = state.bars.length
+        const previous = favorite
+          ? { start: favorite.start, end: favorite.end, favorite: favorite }
+          : state.bars.length
           ? { start: state.bars[state.startIndex].time, end: state.bars[state.endIndex].time }
           : null;
         const snapshot = {
@@ -1069,30 +1078,235 @@
         status.hidden = true;
         board.hidden = false;
         requestAnimationFrame(function () {
+          if (request !== symbolToken) return;
+          const savedFavorite = previous && previous.favorite;
           const first = state.bars[0].time;
           const last = state.bars[state.bars.length - 1].time;
-          const startInside = previous && previous.start >= first && previous.start <= last;
-          if (!startInside) {
-            setRange(0, state.bars.length - 1, "both");
-            return;
+          const startInside = previous && (savedFavorite || (previous.start >= first && previous.start <= last));
+          let start = 0;
+          let end = state.bars.length - 1;
+          if (startInside) {
+            const endTime = previous.end > last ? last : previous.end;
+            const startTime = savedFavorite && previous.start < first ? first : previous.start;
+            start = indexOnOrAfter(startTime);
+            end = indexOnOrBefore(endTime);
+            if (end <= start) {
+              start = 0;
+              end = state.bars.length - 1;
+            }
           }
-          const endTime = previous.end > last ? last : previous.end;
-          const start = indexOnOrAfter(previous.start);
-          const end = indexOnOrBefore(endTime);
-          if (end > start) setRange(start, end, "both", true);
-          else setRange(0, state.bars.length - 1, "both");
+          state.startIndex = start;
+          state.endIndex = end;
+          if (savedFavorite) {
+            selectKind(savedFavorite.kind);
+            selectPeriod(Number(savedFavorite.period));
+          }
+          setRange(start, end, "both", startInside);
         });
       })
       .catch(function (error) {
+        if (request !== symbolToken) return;
         symbolSelect.value = state.symbol;
         status.hidden = false;
         status.className = "status error";
         status.textContent = "시세를 가져오지 못했습니다. " + error.message;
       })
       .finally(function () {
-        symbolSelect.disabled = false;
+        if (request === symbolToken) symbolSelect.disabled = false;
       });
   }
+
+  const FAVORITES_KEY = "cointrading.favorites";
+
+  function readFavorites() {
+    try {
+      const items = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
+      return Array.isArray(items) ? items : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function writeFavorites(items) {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(items));
+  }
+
+  function favoriteName(existing) {
+    const ma = state.kind === "hold" ? "존버" : kindLabel() + state.period + "일";
+    const pressed = document.querySelector("#windows button[aria-pressed='true']:not([hidden])");
+    const start = state.bars[state.startIndex].time.slice(0, 10);
+    const end = state.bars[state.endIndex].time.slice(0, 10);
+    const span = pressed ? pressed.textContent : start + "~" + end;
+    let name = state.symbolName + "_" + ma + "_" + span;
+    if (existing.some(function (item) { return item.name === name; })) {
+      name = state.symbolName + "_" + ma + "_" + start + "~" + end;
+    }
+    return name;
+  }
+
+  function favoriteActive(item) {
+    if (state.mode !== "daily" || state.symbol !== item.symbol || !state.bars.length) return false;
+    if (item.kind !== state.kind) return false;
+    if (item.kind !== "hold" && Number(item.period) !== state.period) return false;
+    return indexOnOrAfter(item.start) === state.startIndex && indexOnOrBefore(item.end) === state.endIndex;
+  }
+
+  let favoriteDrag = null;
+  let favoriteIgnoreClick = false;
+
+  function renderFavorites() {
+    if (favoriteDrag) return;
+    const list = document.getElementById("favorite-list");
+    if (!list) return;
+    const items = readFavorites();
+    if (!items.length) {
+      list.innerHTML = "<li class=\"favorite-empty\">저장된 즐겨찾기가 없습니다.</li>";
+      return;
+    }
+    list.innerHTML = items.map(function (item) {
+      const pressed = favoriteActive(item) ? "true" : "false";
+      return "<li><button type=\"button\" class=\"favorite-open\" data-id=\"" + escapeHtml(item.id) +
+        "\" aria-pressed=\"" + pressed + "\">" + escapeHtml(item.name) +
+        "</button><button type=\"button\" class=\"favorite-remove\" data-id=\"" + escapeHtml(item.id) +
+        "\" aria-label=\"" + escapeHtml(item.name) + " 삭제\">×</button></li>";
+    }).join("");
+  }
+
+  function addFavorite() {
+    if (state.mode !== "daily" || !state.bars.length) return;
+    const start = state.bars[state.startIndex].time;
+    const end = state.bars[state.endIndex].time;
+    const items = readFavorites();
+    const same = items.some(function (item) {
+      return item.symbol === state.symbol && item.kind === state.kind && Number(item.period) === state.period &&
+        item.start === start && item.end === end;
+    });
+    if (same) {
+      renderFavorites();
+      return;
+    }
+    items.unshift({
+      id: String(Date.now()),
+      name: favoriteName(items),
+      symbol: state.symbol,
+      kind: state.kind,
+      period: state.period,
+      start: start,
+      end: end,
+    });
+    writeFavorites(items);
+    renderFavorites();
+  }
+
+  function openFavorite(id) {
+    const item = readFavorites().find(function (saved) { return saved.id === id; });
+    if (!item || state.mode !== "daily") return;
+    if (state.symbol === item.symbol && state.bars.length && state.loadedMode === "daily") {
+      selectKind(item.kind);
+      selectPeriod(Number(item.period));
+      const start = indexOnOrAfter(item.start);
+      const end = indexOnOrBefore(item.end);
+      if (end > start) setRange(start, end, "both", true);
+      else setRange(0, state.bars.length - 1, "both");
+      return;
+    }
+    loadSymbol(item.symbol, item);
+  }
+
+  document.getElementById("favorite-add").addEventListener("click", addFavorite);
+  const favoriteList = document.getElementById("favorite-list");
+
+  function favoriteItemAt(x, y) {
+    const under = document.elementFromPoint(x, y);
+    const item = under && under.closest("#favorite-list li");
+    if (!item || !item.querySelector(".favorite-open")) return null;
+    return item;
+  }
+
+  favoriteList.addEventListener("pointerdown", function (event) {
+    if (event.button !== 0 || event.target.closest(".favorite-remove")) return;
+    const item = event.target.closest("li");
+    const open = item && item.querySelector(".favorite-open");
+    if (!open) return;
+    favoriteDrag = {
+      pointerId: event.pointerId,
+      id: open.dataset.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+  });
+
+  window.addEventListener("pointermove", function (event) {
+    if (!favoriteDrag || event.pointerId !== favoriteDrag.pointerId) return;
+    const item = favoriteList.querySelector('.favorite-open[data-id="' + favoriteDrag.id + '"]');
+    const row = item && item.closest("li");
+    if (!row) return;
+    const dx = event.clientX - favoriteDrag.startX;
+    const dy = event.clientY - favoriteDrag.startY;
+    if (!favoriteDrag.moved) {
+      if (dx * dx + dy * dy < 25) return;
+      favoriteDrag.moved = true;
+      const rect = row.getBoundingClientRect();
+      const ghost = row.cloneNode(true);
+      ghost.classList.add("favorite-ghost");
+      ghost.style.width = rect.width + "px";
+      ghost.style.left = rect.left + "px";
+      ghost.style.top = rect.top + "px";
+      document.body.appendChild(ghost);
+      favoriteDrag.ghost = ghost;
+      favoriteDrag.offsetX = event.clientX - rect.left;
+      favoriteDrag.offsetY = event.clientY - rect.top;
+      row.classList.add("dragging");
+    }
+    favoriteDrag.ghost.style.left = (event.clientX - favoriteDrag.offsetX) + "px";
+    favoriteDrag.ghost.style.top = (event.clientY - favoriteDrag.offsetY) + "px";
+    const target = favoriteItemAt(event.clientX, event.clientY);
+    if (!target || target === row) return;
+    const rect = target.getBoundingClientRect();
+    const before = event.clientX < rect.left + rect.width / 2;
+    row.parentNode.insertBefore(row, before ? target : target.nextSibling);
+  });
+
+  function finishFavoriteDrag(event) {
+    if (!favoriteDrag || event.pointerId !== favoriteDrag.pointerId) return;
+    const moved = favoriteDrag.moved;
+    if (favoriteDrag.ghost) favoriteDrag.ghost.remove();
+    favoriteDrag = null;
+    if (!moved) return;
+    favoriteIgnoreClick = true;
+    const ids = Array.prototype.map.call(favoriteList.querySelectorAll(".favorite-open"), function (button) {
+      return button.dataset.id;
+    });
+    const items = readFavorites();
+    const next = ids.map(function (id) {
+      return items.find(function (item) { return item.id === id; });
+    }).filter(Boolean);
+    items.forEach(function (item) {
+      if (next.indexOf(item) === -1) next.push(item);
+    });
+    writeFavorites(next);
+    renderFavorites();
+  }
+
+  window.addEventListener("pointerup", finishFavoriteDrag);
+  window.addEventListener("pointercancel", finishFavoriteDrag);
+
+  favoriteList.addEventListener("click", function (event) {
+    if (favoriteIgnoreClick) {
+      favoriteIgnoreClick = false;
+      event.preventDefault();
+      return;
+    }
+    const remove = event.target.closest(".favorite-remove");
+    if (remove) {
+      writeFavorites(readFavorites().filter(function (item) { return item.id !== remove.dataset.id; }));
+      renderFavorites();
+      return;
+    }
+    const open = event.target.closest(".favorite-open");
+    if (open) openFavorite(open.dataset.id);
+  });
 
   function remember(mode) {
     state.saved[mode] = {
@@ -1110,6 +1324,7 @@
     document.querySelectorAll("[data-page]").forEach(function (element) {
       element.hidden = element.dataset.page.split(/\s+/).indexOf(mode) === -1;
     });
+    document.querySelector(".controls").classList.toggle("framed", mode === "daily" || mode === "stable");
     if (mode === "news" || mode === "x") {
       board.hidden = true;
       status.hidden = true;
@@ -1957,5 +2172,6 @@
   });
 
   if (location.hash === "#x") showTab("x");
+  renderFavorites();
   loadSymbol("BTC-USD");
 })();
