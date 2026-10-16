@@ -37,6 +37,7 @@ INDEX_QUERIES = {
     "^KS11": '"코스피" OR KOSPI',
     "^KQ11": '"코스닥" OR KOSDAQ',
     "SEOUL-APT": '"서울 아파트" OR "서울아파트"',
+    "KRW=X": '"원달러" OR "달러 환율" OR "USD/KRW" OR $KRW',
 }
 
 

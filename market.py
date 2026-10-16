@@ -70,6 +70,7 @@ INSTRUMENTS = {
     "263750.KQ": {"name": "펄어비스", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
     "277810.KQ": {"name": "레인보우로보틱스", "source": "krx", "quote": "KRW", "venue": "코스닥 현물 주식"},
     "SEOUL-APT": {"name": "서울 아파트", "source": "housing", "quote": "지수", "venue": "KB부동산 월간 아파트 매매가격지수"},
+    "KRW=X": {"name": "원달러", "source": "fx", "quote": "KRW", "venue": "야후 파이낸스 환율"},
 }
 CACHE = {}
 NEWS_CACHE = {}
@@ -162,6 +163,12 @@ def fetch_news(symbol):
     if symbol == "SEOUL-APT":
         items = read_rss(
             "https://news.google.com/rss/search?q=%s&hl=ko&gl=KR&ceid=KR:ko" % quote("서울 아파트 매매"),
+            google=True,
+        )
+        source = "구글 뉴스"
+    elif symbol == "KRW=X":
+        items = read_rss(
+            "https://news.google.com/rss/search?q=%s&hl=ko&gl=KR&ceid=KR:ko" % quote("원달러 환율"),
             google=True,
         )
         source = "구글 뉴스"
